@@ -18,7 +18,7 @@ from tw_stock_analyzer.dashboard.market_views import render_market_context
 from tw_stock_analyzer.dashboard.service import run_analysis
 
 # 分析報告結構版本；變更時清除舊 session 快取
-REPORT_CACHE_VERSION = 2
+REPORT_CACHE_VERSION = 3
 
 PERIOD_OPTIONS = {
     "3 個月": "3mo",
@@ -45,7 +45,19 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    .block-container { padding-top: 1.2rem; }
+    [data-testid="stMainBlockContainer"],
+    .main .block-container,
+    .block-container {
+        padding-top: 2.5rem;
+    }
+    [data-testid="stHeader"] {
+        background: transparent;
+    }
+    h1, h2, h3, [data-testid="stHeading"] {
+        overflow: visible !important;
+        line-height: 1.35 !important;
+        padding-top: 0.15rem;
+    }
     div[data-testid="stMetric"] {
         background: rgba(255,255,255,0.04);
         border: 1px solid rgba(255,255,255,0.08);
@@ -180,6 +192,11 @@ def render_signals(report: AnalysisReport) -> None:
 
 
 def main() -> None:
+    if st.session_state.get("report_cache_version") != REPORT_CACHE_VERSION:
+        for key in ("last_report", "cache_key"):
+            st.session_state.pop(key, None)
+        st.session_state["report_cache_version"] = REPORT_CACHE_VERSION
+
     symbol, period, horizon_days, analyze, run_bt = render_sidebar()
 
     st.header("台股分析儀表板")
@@ -234,7 +251,9 @@ def main() -> None:
 
     with tab_chart:
         st.plotly_chart(
-            build_price_chart(report.ohlcv, f"{report.symbol} 股價與均線"),
+            build_price_chart(
+                report.ohlcv, f"{report.name}（{report.symbol}）股價與均線"
+            ),
             use_container_width=True,
             key="chart_price",
         )

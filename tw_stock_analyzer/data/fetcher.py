@@ -5,6 +5,7 @@ from __future__ import annotations
 import pandas as pd
 import yfinance as yf
 
+from tw_stock_analyzer.data.stock_names import resolve_tw_stock_name
 from tw_stock_analyzer.data.symbol_utils import normalize_symbol
 
 
@@ -65,9 +66,10 @@ class StockFetcher:
         """取得股票基本資訊（名稱、產業等）。"""
         ticker = normalize_symbol(symbol)
         info = yf.Ticker(ticker).info
+        yf_name = info.get("longName") or info.get("shortName", "—")
         return {
             "symbol": ticker,
-            "name": info.get("longName") or info.get("shortName", "—"),
+            "name": resolve_tw_stock_name(symbol, yf_name),
             "sector": info.get("sector", "—"),
             "industry": info.get("industry", "—"),
             "market_cap": info.get("marketCap"),
