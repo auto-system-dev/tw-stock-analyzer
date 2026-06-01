@@ -1,0 +1,11 @@
+.venv
+__pycache__
+*.pyc
+.git
+.cursor
+*.egg-info
+dist
+build
+.env
+*.md
+!README.md
