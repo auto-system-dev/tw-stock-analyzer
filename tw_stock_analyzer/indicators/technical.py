@@ -1,0 +1,37 @@
+"""技術指標計算。"""
+
+from __future__ import annotations
+
+import pandas as pd
+from ta.momentum import RSIIndicator
+from ta.trend import MACD, SMAIndicator
+from ta.volatility import BollingerBands
+
+
+class TechnicalIndicators:
+    """在 OHLCV DataFrame 上計算常用技術指標。"""
+
+    def compute(self, df: pd.DataFrame) -> pd.DataFrame:
+        result = df.copy()
+        close = result["close"]
+
+        result["sma_5"] = SMAIndicator(close, window=5).sma_indicator()
+        result["sma_20"] = SMAIndicator(close, window=20).sma_indicator()
+        result["sma_60"] = SMAIndicator(close, window=60).sma_indicator()
+
+        result["rsi_14"] = RSIIndicator(close, window=14).rsi()
+
+        macd = MACD(close)
+        result["macd"] = macd.macd()
+        result["macd_signal"] = macd.macd_signal()
+        result["macd_hist"] = macd.macd_diff()
+
+        bb = BollingerBands(close, window=20, window_dev=2)
+        result["bb_upper"] = bb.bollinger_hband()
+        result["bb_middle"] = bb.bollinger_mavg()
+        result["bb_lower"] = bb.bollinger_lband()
+
+        result["return_1d"] = close.pct_change()
+        result["volatility_20d"] = result["return_1d"].rolling(20).std()
+
+        return result.dropna()
