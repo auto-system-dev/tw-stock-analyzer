@@ -67,6 +67,13 @@ def render_sidebar() -> tuple[str, str, int, bool, bool]:
         st.caption("技術分析與價格趨勢預測")
         st.divider()
 
+        st.markdown("**常用標的**")
+        cols = st.columns(3)
+        for i, code in enumerate(["2330", "2317", "2454", "2303", "2881"]):
+            if cols[i % 3].button(code, use_container_width=True, key=f"preset_{code}"):
+                st.session_state.symbol = code
+                st.rerun()
+
         symbol = st.text_input(
             "股票代號",
             key="symbol",
@@ -76,13 +83,6 @@ def render_sidebar() -> tuple[str, str, int, bool, bool]:
         horizon_days = st.slider("預測天數", min_value=1, max_value=20, value=5)
         analyze = st.button("開始分析", type="primary", use_container_width=True)
         run_bt = st.button("執行回測", use_container_width=True)
-
-        st.divider()
-        st.markdown("**常用標的**")
-        cols = st.columns(3)
-        for i, code in enumerate(["2330", "2317", "2454", "2303", "2881"]):
-            if cols[i % 3].button(code, use_container_width=True, key=f"preset_{code}"):
-                st.session_state.symbol = code
 
         st.divider()
         st.caption("股價：Yahoo · 籌碼/營收：FinMind · 僅供研究參考")
