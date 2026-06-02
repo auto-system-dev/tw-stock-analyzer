@@ -15,10 +15,11 @@ from tw_stock_analyzer.dashboard.charts import (
 from tw_stock_analyzer.dashboard.equity_chart import build_equity_chart
 from tw_stock_analyzer.data.market_context import ensure_report_market_context
 from tw_stock_analyzer.dashboard.market_views import render_market_context
+from tw_stock_analyzer.dashboard.screener_service import run_screen
 from tw_stock_analyzer.dashboard.service import run_analysis
 
 # 分析報告結構版本；變更時清除舊 session 快取
-REPORT_CACHE_VERSION = 3
+REPORT_CACHE_VERSION = 4
 
 PERIOD_OPTIONS = {
     "3 個月": "3mo",
@@ -70,14 +71,47 @@ st.markdown(
 )
 
 
-def render_sidebar() -> tuple[str, str, int, bool, bool]:
+def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict]:
     if "symbol" not in st.session_state:
         st.session_state.symbol = "2330"
 
+    screen_opts: dict = {}
+
     with st.sidebar:
         st.title("📈 台股分析")
-        st.caption("技術分析與價格趨勢預測")
+        st.caption("技術分析 · 潛力評分 · 批次掃描")
+        page = st.radio(
+            "功能",
+            ["單檔分析", "潛力股掃描"],
+            horizontal=True,
+            label_visibility="collapsed",
+            key="page_mode",
+        )
         st.divider()
+
+        if page == "潛力股掃描":
+            screen_opts["universe"] = st.selectbox(
+                "股票池",
+                ["watchlist", "all"],
+                format_func=lambda x: "常用股" if x == "watchlist" else "全市場",
+            )
+            screen_opts["symbols_csv"] = st.text_input(
+                "自訂代號（選填，逗號分隔）",
+                placeholder="2330,2454,2303",
+            )
+            screen_opts["top_n"] = st.slider("Top N", 5, 30, 10)
+            screen_opts["min_score"] = st.slider("最低綜合分", 0, 80, 0, step=5)
+            screen_opts["bullish_only"] = st.checkbox("僅看多")
+            screen_opts["period"] = st.selectbox(
+                "掃描資料期間",
+                list(PERIOD_OPTIONS.keys()),
+                index=2,
+            )
+            run_screen_btn = st.button("開始掃描", type="primary", use_container_width=True)
+            screen_opts["run"] = run_screen_btn
+            st.divider()
+            st.caption("股價：Yahoo · 籌碼/營收：FinMind · 僅供研究參考")
+            return "", "", page, 5, False, False, screen_opts
 
         st.markdown("**常用標的**")
         cols = st.columns(3)
@@ -100,7 +134,7 @@ def render_sidebar() -> tuple[str, str, int, bool, bool]:
         st.caption("股價：Yahoo · 籌碼/營收：FinMind · 僅供研究參考")
 
     period = PERIOD_OPTIONS[period_label]
-    return symbol.strip(), period, horizon_days, analyze, run_bt
+    return symbol.strip(), period, page, horizon_days, analyze, run_bt, screen_opts
 
 
 def render_backtest(symbol: str, period: str, horizon_days: int) -> bool:
@@ -166,9 +200,10 @@ def _display_backtest(comparison: ComparisonReport, *, chart_key: str = "bt_equi
 
 def render_metrics(report: AnalysisReport) -> None:
     pred = report.prediction
+    ps = report.potential_score
     delta_mode, arrow = DIRECTION_STYLE.get(pred.direction, ("off", "→"))
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("目前收盤", f"{pred.current_price:,.2f} 元")
     c2.metric(
         f"預估 {pred.horizon_days} 日後",
@@ -176,7 +211,29 @@ def render_metrics(report: AnalysisReport) -> None:
         f"{pred.predicted_change_pct:+.2f}%",
     )
     c3.metric("綜合方向", f"{arrow} {pred.direction}", delta_color=delta_mode)
-    c4.metric("模型信心 (R²)", f"{pred.confidence:.1%}")
+    c4.metric("潛力評分", f"{ps.total}/100", f"{ps.grade} 級")
+    c5.metric("模型信心 (R²)", f"{pred.confidence:.1%}")
+
+
+def render_potential_score(report: AnalysisReport) -> None:
+    ps = report.potential_score
+    st.subheader("潛力評分")
+    cols = st.columns(5)
+    for col, (label, val, mx) in zip(
+        cols,
+        [
+            ("技術+ML", ps.technical, 25),
+            ("基本面", ps.fundamental, 25),
+            ("籌碼", ps.institutional, 25),
+            ("題材", ps.theme, 10),
+            ("動能", ps.momentum, 15),
+        ],
+    ):
+        col.metric(label, f"{val}/{mx}")
+    if ps.reasons:
+        with st.expander("評分理由"):
+            for reason in ps.reasons:
+                st.write(f"- {reason}")
 
 
 def render_signals(report: AnalysisReport) -> None:
@@ -191,13 +248,92 @@ def render_signals(report: AnalysisReport) -> None:
     cols[-1].info(f"**MACD 柱**\n\n{latest['macd_hist']:.4f}")
 
 
+def render_screener_page(screen_opts: dict) -> None:
+    st.header("潛力股掃描")
+    st.caption("兩階段掃描：快速技術篩選 → 深度基本面/籌碼評分（批次略過 ML 以加速）")
+
+    if not screen_opts.get("run"):
+        st.info("在左側設定股票池與篩選條件，按 **開始掃描**。")
+        return
+
+    universe = screen_opts["universe"]
+    symbols_csv = screen_opts.get("symbols_csv", "")
+    top_n = screen_opts["top_n"]
+    min_score = screen_opts["min_score"]
+    bullish_only = screen_opts["bullish_only"]
+    period = PERIOD_OPTIONS[screen_opts["period"]]
+
+    try:
+        with st.spinner("正在掃描…（常用股約 1–2 分鐘，全市場較久）"):
+            result = run_screen(
+                universe,
+                symbols_csv,
+                top_n,
+                min_score,
+                bullish_only,
+                period,
+            )
+    except Exception as e:
+        st.error(f"掃描失敗：{e}")
+        return
+
+    st.success(
+        f"{result.universe_label} · 掃描 {result.scanned_count} 檔 · "
+        f"深度 {result.deep_scanned_count} 檔 · 符合 {len(result.ranked)} 檔"
+    )
+    for note in result.notes:
+        st.caption(note)
+
+    if not result.ranked:
+        st.warning("無符合條件的標的，請調低最低分或更換股票池。")
+        return
+
+    rows = []
+    for i, row in enumerate(result.ranked, start=1):
+        s = row.score
+        rows.append(
+            {
+                "排名": i,
+                "代號": row.symbol,
+                "名稱": row.name,
+                "總分": s.total,
+                "等級": s.grade,
+                "方向": row.direction,
+                "技術": s.technical,
+                "基本面": s.fundamental,
+                "籌碼": s.institutional,
+                "題材": s.theme,
+                "動能": s.momentum,
+                "重點": " · ".join(s.reasons[:2]),
+            }
+        )
+    st.dataframe(rows, use_container_width=True)
+
+    st.markdown("**點選代號進行單檔分析**")
+    pick_cols = st.columns(min(len(result.ranked), 5))
+    for col, row in zip(pick_cols, result.ranked[:5]):
+        if col.button(f"{row.symbol} {row.name[:4]}", key=f"pick_{row.symbol}"):
+            st.session_state.symbol = row.symbol
+            st.session_state["page_mode"] = "單檔分析"
+            st.session_state["auto_analyze"] = True
+            st.rerun()
+
+
 def main() -> None:
     if st.session_state.get("report_cache_version") != REPORT_CACHE_VERSION:
         for key in ("last_report", "cache_key"):
             st.session_state.pop(key, None)
         st.session_state["report_cache_version"] = REPORT_CACHE_VERSION
 
-    symbol, period, horizon_days, analyze, run_bt = render_sidebar()
+    symbol, period, page, horizon_days, analyze, run_bt, screen_opts = render_sidebar()
+
+    if page == "潛力股掃描":
+        render_screener_page(screen_opts)
+        st.caption("免責聲明：本工具輸出僅供學習與研究，不構成任何投資建議。")
+        return
+
+    if st.session_state.pop("auto_analyze", False):
+        analyze = True
 
     st.header("台股分析儀表板")
     st.caption("輸入代號後按「開始分析」或「執行回測」，或從側欄選擇常用標的")
@@ -243,6 +379,7 @@ def main() -> None:
     )
 
     render_metrics(report)
+    render_potential_score(report)
     st.divider()
 
     tab_chart, tab_signal, tab_market, tab_summary, tab_backtest = st.tabs(

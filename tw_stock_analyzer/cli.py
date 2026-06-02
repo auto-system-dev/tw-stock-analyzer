@@ -11,6 +11,8 @@ from rich.table import Table
 
 from tw_stock_analyzer.analyzer.engine import StockAnalyzer
 from tw_stock_analyzer.backtest.engine import BacktestEngine
+from tw_stock_analyzer.screener.engine import ScreenerEngine
+from tw_stock_analyzer.screener.filters import ScreenerFilters
 
 
 def _make_console() -> Console:
@@ -130,6 +132,20 @@ def analyze_cmd(symbol: str, period: str, horizon_days: int) -> None:
     if ctx.themes:
         console.print(f"[cyan]題材：[/cyan]{ctx.themes_summary()}")
 
+    ps = report.potential_score
+    score_table = Table(title="潛力評分", show_header=True)
+    score_table.add_column("維度", style="cyan")
+    score_table.add_column("分數", justify="right")
+    score_table.add_row("技術 + ML", f"{ps.technical}/25")
+    score_table.add_row("基本面", f"{ps.fundamental}/25")
+    score_table.add_row("籌碼", f"{ps.institutional}/25")
+    score_table.add_row("題材", f"{ps.theme}/10")
+    score_table.add_row("動能", f"{ps.momentum}/15")
+    score_table.add_row("綜合", f"[bold]{ps.total}/100 ({ps.grade})[/bold]")
+    console.print(score_table)
+    if ps.reasons:
+        console.print("[cyan]評分理由：[/cyan]" + " · ".join(ps.reasons[:5]))
+
     if ctx.news:
         news_table = Table(title="近期新聞（前 5 則）", show_header=True)
         news_table.add_column("標題")
@@ -143,6 +159,141 @@ def analyze_cmd(symbol: str, period: str, horizon_days: int) -> None:
 
     console.print()
     console.print(Panel(report.summary, title="摘要", border_style="green"))
+    console.print(
+        "[dim]免責聲明：本工具輸出僅供學習與研究，不構成任何投資建議。[/dim]"
+    )
+
+
+@main.command("screen")
+@click.option(
+    "--universe",
+    "-u",
+    type=click.Choice(["watchlist", "all"], case_sensitive=False),
+    default="watchlist",
+    show_default=True,
+    help="股票池：watchlist=常用股, all=全市場",
+)
+@click.option(
+    "--symbols",
+    "-s",
+    default="",
+    help="自訂代號（逗號分隔，如 2330,2454），指定時忽略 --universe",
+)
+@click.option("--top", default=10, show_default=True, type=int, help="輸出 Top N")
+@click.option(
+    "--min-score",
+    default=0,
+    show_default=True,
+    type=int,
+    help="最低綜合分",
+)
+@click.option(
+    "--bullish-only",
+    is_flag=True,
+    default=False,
+    help="僅保留綜合方向「看多」",
+)
+@click.option(
+    "--period",
+    "-p",
+    default="1y",
+    show_default=True,
+    help="快速掃描用的歷史資料期間",
+)
+def screen_cmd(
+    universe: str,
+    symbols: str,
+    top: int,
+    min_score: int,
+    bullish_only: bool,
+    period: str,
+) -> None:
+    """掃描潛力股並依綜合分排名，例如：tw-stock screen --universe watchlist --top 10"""
+    sym_list = [s.strip() for s in symbols.split(",") if s.strip()] or None
+    flt = ScreenerFilters(
+        min_score=min_score,
+        top_n=top,
+        bullish_only=bullish_only,
+    )
+    engine = ScreenerEngine(period=period)
+
+    from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("{task.completed}/{task.total}"),
+            console=console,
+        ) as progress:
+            fast_task = progress.add_task("快速掃描…", total=1)
+            deep_task = progress.add_task("深度評分…", total=1)
+
+            def on_progress(phase: str, current: int, total: int) -> None:
+                if phase == "fast":
+                    progress.update(fast_task, total=max(total, 1), completed=current)
+                else:
+                    progress.update(deep_task, total=max(total, 1), completed=current)
+
+            result = engine.scan(
+                universe=universe.lower(),
+                symbols=sym_list,
+                filters=flt,
+                progress=on_progress,
+            )
+    except Exception as e:
+        console.print(f"[red]錯誤：{e}[/red]")
+        raise SystemExit(1) from e
+
+    console.print()
+    console.print(
+        Panel(
+            f"股票池：{result.universe_label}\n"
+            f"成功掃描 {result.scanned_count} 檔 · "
+            f"深度評分 {result.deep_scanned_count} 檔 · "
+            f"符合條件 {len(result.ranked)} 檔",
+            title="潛力股掃描",
+            border_style="blue",
+        )
+    )
+
+    for note in result.notes:
+        console.print(f"[dim]{note}[/dim]")
+
+    if not result.ranked:
+        console.print("[yellow]無符合條件的標的，可調低 --min-score 或更換股票池。[/yellow]")
+        return
+
+    table = Table(title=f"Top {len(result.ranked)} 潛力股", show_header=True)
+    table.add_column("#", style="dim")
+    table.add_column("代號", style="cyan")
+    table.add_column("名稱")
+    table.add_column("總分", justify="right")
+    table.add_column("等級", justify="center")
+    table.add_column("方向")
+    table.add_column("技術", justify="right")
+    table.add_column("基本面", justify="right")
+    table.add_column("籌碼", justify="right")
+    table.add_column("動能", justify="right")
+
+    for i, row in enumerate(result.ranked, start=1):
+        s = row.score
+        table.add_row(
+            str(i),
+            row.symbol,
+            row.name[:8],
+            str(s.total),
+            s.grade,
+            row.direction,
+            str(s.technical),
+            str(s.fundamental),
+            str(s.institutional),
+            str(s.momentum),
+        )
+
+    console.print(table)
+    console.print()
     console.print(
         "[dim]免責聲明：本工具輸出僅供學習與研究，不構成任何投資建議。[/dim]"
     )

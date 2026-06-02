@@ -5,9 +5,11 @@
 ## 功能
 
 - **資料擷取**：支援台股代號（如 `2330` 自動轉為 `2330.TW`）
-- **技術指標**：SMA(5/20/60)、RSI、MACD、布林通道、波動率
+- **技術指標**：SMA(5/20/60)、RSI、MACD、布林通道、波動率、量比、距 52 週高點
 - **價格預測**：Random Forest 預測 N 日後收盤價變化
 - **訊號綜合**：均線、RSI、MACD、布林規則與模型輸出整合判斷
+- **潛力評分**：技術/基本面/籌碼/題材/動能多維度 0–100 分（A–D 級）
+- **潛力股掃描**：兩階段批次掃描，依綜合分排名輸出 Top N
 - **網頁儀表板**：Streamlit 互動圖表與預測結果
 - **消息面**：新聞、公告、社群（Google News RSS）
 - **題材偵測**：AI、法說、訂單、股利等關鍵字
@@ -51,6 +53,36 @@ tw-stock analyze 2330
 tw-stock analyze 2317 --period 1y --horizon 10
 ```
 
+分析結果含 **潛力評分**（0–100），各維度如下：
+
+| 維度 | 滿分 | 參考條件 |
+|------|------|----------|
+| 技術 + ML | 25 | 均線/RSI/MACD/布林規則 + 模型預測方向 |
+| 基本面 | 25 | 營收 YoY、PER、PBR、EPS |
+| 籌碼 | 25 | 三大法人淨買超、外資投信同向 |
+| 題材 | 10 | 新聞關鍵字命中 |
+| 動能 | 15 | 量比、距 52 週高點、多頭排列 |
+
+等級：A ≥ 75 · B ≥ 60 · C ≥ 45 · D 未滿 45
+
+### 潛力股掃描
+
+```bash
+# 掃描常用股，輸出 Top 10
+tw-stock screen --universe watchlist --top 10
+
+# 全市場（較慢，建議 FINMIND_API_TOKEN）
+tw-stock screen --universe all --top 20 --min-score 60
+
+# 自訂代號
+tw-stock screen --symbols 2330,2454,2303 --top 5
+
+# 僅保留綜合方向「看多」
+tw-stock screen --universe watchlist --bullish-only --top 10
+```
+
+掃描採**兩階段**：先以技術+動能快速篩選 Top 50，再取基本面/籌碼/題材做完整評分（批次略過 ML 以加速）。
+
 也可直接執行模組：
 
 ```bash
@@ -67,7 +99,7 @@ tw-stock-dashboard
 streamlit run tw_stock_analyzer/dashboard/app.py
 ```
 
-瀏覽器開啟 `http://localhost:8501`，輸入股票代號後按「開始分析」，於 **消息面** 分頁查看基本面、籌碼、新聞與題材。
+瀏覽器開啟 `http://localhost:8501`，側欄可切換 **單檔分析** 或 **潛力股掃描**；單檔分析於 **消息面** 分頁查看基本面、籌碼、新聞與題材。
 
 ### 回測（比較策略）
 
@@ -127,7 +159,8 @@ tw-stock-analyzer/
 │   ├── data/          # 股價、基本面、籌碼、新聞、題材
 │   ├── indicators/    # 技術指標
 │   ├── predictor/     # ML 預測模型
-│   ├── analyzer/      # 分析引擎
+│   ├── analyzer/      # 分析引擎與潛力評分
+│   ├── screener/      # 批次潛力股掃描
 │   ├── backtest/      # 策略回測與績效比較
 │   ├── dashboard/     # Streamlit 網頁儀表板
 │   └── cli.py         # 命令列介面
@@ -141,7 +174,7 @@ tw-stock-analyzer/
 - [x] Streamlit 網頁儀表板
 - [ ] 上櫃股票（.TWO）代號自動判別
 - [x] 法人籌碼、營收等基本面資料
-- [ ] 多檔股票批次掃描
+- [x] 多檔股票批次掃描（潛力股排名）
 
 ## 免責聲明
 

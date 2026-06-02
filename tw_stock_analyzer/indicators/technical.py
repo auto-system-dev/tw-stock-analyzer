@@ -33,5 +33,16 @@ class TechnicalIndicators:
 
         result["return_1d"] = close.pct_change()
         result["volatility_20d"] = result["return_1d"].rolling(20).std()
+        result["volatility_5d"] = result["return_1d"].rolling(5).std()
+
+        vol_ma5 = result["volume"].rolling(5).mean()
+        result["volume_ratio_5d"] = result["volume"] / vol_ma5
+
+        high_52w = close.rolling(252, min_periods=60).max()
+        result["pct_from_52w_high"] = close / high_52w - 1
+
+        result["volatility_ratio"] = result["volatility_5d"] / result[
+            "volatility_20d"
+        ].replace(0, float("nan"))
 
         return result.dropna()

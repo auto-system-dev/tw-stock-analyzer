@@ -7,11 +7,13 @@ from datetime import datetime
 
 import pandas as pd
 
+from tw_stock_analyzer.analyzer.scoring import PotentialScore, compute_potential_score
 from tw_stock_analyzer.data.fetcher import StockFetcher
 from tw_stock_analyzer.data.market_context import MarketContextProvider
 from tw_stock_analyzer.data.models import MarketContext
 from tw_stock_analyzer.indicators.technical import TechnicalIndicators
 from tw_stock_analyzer.predictor.model import PredictionResult, PricePredictor
+from tw_stock_analyzer.predictor.signals import rule_signals_from_row
 
 
 @dataclass
@@ -26,6 +28,7 @@ class AnalysisReport:
     ohlcv: pd.DataFrame
     prediction: PredictionResult
     market_context: MarketContext
+    potential_score: PotentialScore
     summary: str
 
 
@@ -48,8 +51,17 @@ class StockAnalyzer:
         enriched = self.indicators.compute(raw)
         prediction = self.predictor.predict(enriched)
         market_context = self.market.fetch(symbol, info["name"])
+        latest = enriched.iloc[-1]
+        signals = rule_signals_from_row(latest)
+        potential_score = compute_potential_score(
+            latest,
+            signals,
+            market_context,
+            prediction,
+            use_ml=True,
+        )
 
-        summary = self._build_summary(info["name"], prediction, market_context)
+        summary = self._build_summary(info["name"], prediction, market_context, potential_score)
         return AnalysisReport(
             symbol=info["symbol"],
             name=info["name"],
@@ -59,11 +71,16 @@ class StockAnalyzer:
             ohlcv=enriched,
             prediction=prediction,
             market_context=market_context,
+            potential_score=potential_score,
             summary=summary,
         )
 
     def _build_summary(
-        self, name: str, pred: PredictionResult, ctx: MarketContext
+        self,
+        name: str,
+        pred: PredictionResult,
+        ctx: MarketContext,
+        score: PotentialScore,
     ) -> str:
         change_word = "上漲" if pred.predicted_change_pct >= 0 else "下跌"
         theme_part = f"偵測題材：{ctx.themes_summary()}。"
@@ -74,10 +91,14 @@ class StockAnalyzer:
                 f"近{i.period_days}日法人淨買超 {i.total_net:,.0f} 張"
                 f"（外資 {i.foreign_net:,.0f}、投信 {i.trust_net:,.0f}）。"
             )
+        top_reasons = "；".join(score.reasons[:3]) if score.reasons else "—"
         return (
             f"{name} 目前收盤 {pred.current_price:.2f} 元，"
             f"模型預估 {pred.horizon_days} 日後{change_word} "
             f"{abs(pred.predicted_change_pct):.2f}%（目標約 {pred.predicted_price:.2f} 元），"
-            f"綜合判斷：{pred.direction}。{chip_part}{theme_part}"
+            f"綜合判斷：{pred.direction}。"
+            f"潛力評分 {score.total}/100（{score.grade} 級）。"
+            f"重點：{top_reasons}。"
+            f"{chip_part}{theme_part}"
             f"此結果僅供研究參考，不構成投資建議。"
         )

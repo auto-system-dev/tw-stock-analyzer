@@ -60,6 +60,44 @@ class FinMindApiClient:
             end_date=end.isoformat(),
         )
 
+    def fetch_dataset(
+        self,
+        dataset: str,
+        *,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> pd.DataFrame | None:
+        """取得整個 dataset（不指定 data_id）。"""
+        end = end_date or datetime.now().date().isoformat()
+        start = start_date or (datetime.now().date() - timedelta(days=7)).isoformat()
+        params: dict[str, str] = {
+            "dataset": dataset,
+            "start_date": start,
+            "end_date": end,
+        }
+        try:
+            resp = self._session.get(API_BASE, params=params, timeout=120)
+            resp.raise_for_status()
+            body = resp.json()
+            rows = body.get("data")
+            if not rows:
+                return None
+            return pd.DataFrame(rows)
+        except Exception:
+            return None
+
+    def fetch_stock_list(self) -> list[str]:
+        """取得上市股票代號清單（FinMind TaiwanStockInfo）。"""
+        df = self.fetch_dataset("TaiwanStockInfo")
+        if df is None or df.empty:
+            return []
+        id_col = "stock_id" if "stock_id" in df.columns else "data_id"
+        if id_col not in df.columns:
+            return []
+        codes = df[id_col].astype(str).str.strip()
+        codes = codes[codes.str.match(r"^\d{4}$", na=False)]
+        return sorted(codes.unique().tolist())
+
 
 @lru_cache(maxsize=1)
 def get_finmind_client() -> FinMindApiClient:
