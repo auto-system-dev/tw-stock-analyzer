@@ -142,6 +142,7 @@ def analyze_cmd(symbol: str, period: str, horizon_days: int) -> None:
     score_table.add_row("題材", f"{ps.theme}/10")
     score_table.add_row("動能", f"{ps.momentum}/15")
     score_table.add_row("綜合", f"[bold]{ps.total}/100 ({ps.grade})[/bold]")
+    score_table.add_row("持有類型", f"{ps.holding_type}（{ps.holding_period}）")
     console.print(score_table)
     if ps.reasons:
         console.print("[cyan]評分理由：[/cyan]" + " · ".join(ps.reasons[:5]))
@@ -272,6 +273,7 @@ def screen_cmd(
     table.add_column("總分", justify="right")
     table.add_column("等級", justify="center")
     table.add_column("方向")
+    table.add_column("持有類型")
     table.add_column("技術", justify="right")
     table.add_column("基本面", justify="right")
     table.add_column("籌碼", justify="right")
@@ -286,6 +288,7 @@ def screen_cmd(
             str(s.total),
             s.grade,
             row.direction,
+            s.holding_type,
             str(s.technical),
             str(s.fundamental),
             str(s.institutional),

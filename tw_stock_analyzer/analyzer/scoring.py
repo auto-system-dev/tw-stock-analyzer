@@ -11,6 +11,14 @@ from tw_stock_analyzer.predictor.model import PredictionResult
 from tw_stock_analyzer.predictor.signals import rules_score
 
 
+HOLDING_PERIOD_HINTS: dict[str, str] = {
+    "短線": "約 1～2 週",
+    "波段": "約 2～8 週",
+    "中期": "約 1～3 個月",
+    "長期": "約 3 個月以上",
+}
+
+
 @dataclass
 class PotentialScore:
     """潛力股綜合評分（0–100）。"""
@@ -22,6 +30,8 @@ class PotentialScore:
     theme: int
     momentum: int
     grade: str
+    holding_type: str
+    holding_period: str
     reasons: list[str] = field(default_factory=list)
 
 
@@ -33,6 +43,31 @@ def _grade_from_total(total: int) -> str:
     if total >= 45:
         return "C"
     return "D"
+
+
+def _infer_holding_type(
+    technical: int,
+    fundamental: int,
+    institutional: int,
+    theme: int,
+    momentum: int,
+) -> tuple[str, str]:
+    """
+    依各維度得分推估持有類型。
+
+    短線：題材 + 動能為主
+    波段：籌碼 + 動能 + 技術為主
+    中期：基本面 + 籌碼為主
+    長期：基本面為主且題材權重低
+    """
+    weights = {
+        "短線": theme * 3 + momentum * 2 + technical * 0.5,
+        "波段": momentum * 2 + institutional * 2 + technical + theme * 0.5,
+        "中期": fundamental * 2.5 + institutional,
+        "長期": fundamental * 2.5 + institutional * 0.5 - theme * 1.5,
+    }
+    holding_type = max(weights, key=weights.get)
+    return holding_type, HOLDING_PERIOD_HINTS[holding_type]
 
 
 def _score_technical(
@@ -171,6 +206,9 @@ def compute_potential_score(
 
     total = technical + fundamental + institutional + theme + momentum
     grade = _grade_from_total(total)
+    holding_type, holding_period = _infer_holding_type(
+        technical, fundamental, institutional, theme, momentum
+    )
 
     return PotentialScore(
         total=total,
@@ -180,5 +218,7 @@ def compute_potential_score(
         theme=theme,
         momentum=momentum,
         grade=grade,
+        holding_type=holding_type,
+        holding_period=holding_period,
         reasons=reasons[:8],
     )

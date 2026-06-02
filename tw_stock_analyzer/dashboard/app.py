@@ -19,7 +19,7 @@ from tw_stock_analyzer.dashboard.screener_service import run_screen
 from tw_stock_analyzer.dashboard.service import run_analysis
 
 # 分析報告結構版本；變更時清除舊 session 快取
-REPORT_CACHE_VERSION = 4
+REPORT_CACHE_VERSION = 5
 
 PERIOD_OPTIONS = {
     "3 個月": "3mo",
@@ -203,7 +203,7 @@ def render_metrics(report: AnalysisReport) -> None:
     ps = report.potential_score
     delta_mode, arrow = DIRECTION_STYLE.get(pred.direction, ("off", "→"))
 
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("目前收盤", f"{pred.current_price:,.2f} 元")
     c2.metric(
         f"預估 {pred.horizon_days} 日後",
@@ -212,12 +212,14 @@ def render_metrics(report: AnalysisReport) -> None:
     )
     c3.metric("綜合方向", f"{arrow} {pred.direction}", delta_color=delta_mode)
     c4.metric("潛力評分", f"{ps.total}/100", f"{ps.grade} 級")
-    c5.metric("模型信心 (R²)", f"{pred.confidence:.1%}")
+    c5.metric("持有類型", ps.holding_type, ps.holding_period)
+    c6.metric("模型信心 (R²)", f"{pred.confidence:.1%}")
 
 
 def render_potential_score(report: AnalysisReport) -> None:
     ps = report.potential_score
     st.subheader("潛力評分")
+    st.caption(f"持有類型：**{ps.holding_type}** · 參考持有 {ps.holding_period}（依評分維度推估，非投資建議）")
     cols = st.columns(5)
     for col, (label, val, mx) in zip(
         cols,
@@ -298,6 +300,8 @@ def render_screener_page(screen_opts: dict) -> None:
                 "名稱": row.name,
                 "總分": s.total,
                 "等級": s.grade,
+                "持有類型": s.holding_type,
+                "參考持有": s.holding_period,
                 "方向": row.direction,
                 "技術": s.technical,
                 "基本面": s.fundamental,
