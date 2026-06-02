@@ -250,33 +250,43 @@ def render_signals(report: AnalysisReport) -> None:
     cols[-1].info(f"**MACD 柱**\n\n{latest['macd_hist']:.4f}")
 
 
+def _navigate_to_analyze(symbol: str) -> None:
+    """從掃描結果跳轉至單檔分析。"""
+    st.session_state.symbol = symbol
+    st.session_state.page_mode = "單檔分析"
+    st.session_state.auto_analyze = True
+
+
 def render_screener_page(screen_opts: dict) -> None:
     st.header("潛力股掃描")
     st.caption("兩階段掃描：快速技術篩選 → 深度基本面/籌碼評分（批次略過 ML 以加速）")
 
-    if not screen_opts.get("run"):
+    if screen_opts.get("run"):
+        universe = screen_opts["universe"]
+        symbols_csv = screen_opts.get("symbols_csv", "")
+        top_n = screen_opts["top_n"]
+        min_score = screen_opts["min_score"]
+        bullish_only = screen_opts["bullish_only"]
+        period = PERIOD_OPTIONS[screen_opts["period"]]
+
+        try:
+            with st.spinner("正在掃描…（常用股約 1–2 分鐘，全市場較久）"):
+                result = run_screen(
+                    universe,
+                    symbols_csv,
+                    top_n,
+                    min_score,
+                    bullish_only,
+                    period,
+                )
+            st.session_state["screener_result"] = result
+        except Exception as e:
+            st.error(f"掃描失敗：{e}")
+            return
+
+    result = st.session_state.get("screener_result")
+    if result is None:
         st.info("在左側設定股票池與篩選條件，按 **開始掃描**。")
-        return
-
-    universe = screen_opts["universe"]
-    symbols_csv = screen_opts.get("symbols_csv", "")
-    top_n = screen_opts["top_n"]
-    min_score = screen_opts["min_score"]
-    bullish_only = screen_opts["bullish_only"]
-    period = PERIOD_OPTIONS[screen_opts["period"]]
-
-    try:
-        with st.spinner("正在掃描…（常用股約 1–2 分鐘，全市場較久）"):
-            result = run_screen(
-                universe,
-                symbols_csv,
-                top_n,
-                min_score,
-                bullish_only,
-                period,
-            )
-    except Exception as e:
-        st.error(f"掃描失敗：{e}")
         return
 
     st.success(
@@ -316,11 +326,13 @@ def render_screener_page(screen_opts: dict) -> None:
     st.markdown("**點選代號進行單檔分析**")
     pick_cols = st.columns(min(len(result.ranked), 5))
     for col, row in zip(pick_cols, result.ranked[:5]):
-        if col.button(f"{row.symbol} {row.name[:4]}", key=f"pick_{row.symbol}"):
-            st.session_state.symbol = row.symbol
-            st.session_state["page_mode"] = "單檔分析"
-            st.session_state["auto_analyze"] = True
-            st.rerun()
+        col.button(
+            f"{row.symbol} {row.name[:4]}",
+            key=f"pick_{row.symbol}",
+            use_container_width=True,
+            on_click=_navigate_to_analyze,
+            args=(row.symbol,),
+        )
 
 
 def main() -> None:
@@ -329,6 +341,11 @@ def main() -> None:
             st.session_state.pop(key, None)
         st.session_state["report_cache_version"] = REPORT_CACHE_VERSION
 
+    # 掃描結果點選後，先切換頁面再渲染側欄
+    pending_analyze = st.session_state.pop("auto_analyze", False)
+    if pending_analyze:
+        st.session_state.page_mode = "單檔分析"
+
     symbol, period, page, horizon_days, analyze, run_bt, screen_opts = render_sidebar()
 
     if page == "潛力股掃描":
@@ -336,7 +353,7 @@ def main() -> None:
         st.caption("免責聲明：本工具輸出僅供學習與研究，不構成任何投資建議。")
         return
 
-    if st.session_state.pop("auto_analyze", False):
+    if pending_analyze:
         analyze = True
 
     st.header("台股分析儀表板")
