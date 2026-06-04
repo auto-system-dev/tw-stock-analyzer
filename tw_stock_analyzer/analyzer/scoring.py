@@ -97,6 +97,17 @@ def _score_technical(
     elif signals.get("均線") == "空頭排列":
         reasons.append("均線空頭排列")
 
+    fib_sig = signals.get("斐波那契", "中性")
+    if fib_sig == "回撤支撐區":
+        base = min(25, base + 3)
+        reasons.append("Fib 回撤支撐區（38.2%～61.8%）")
+    elif fib_sig == "支撐失守":
+        base = max(0, base - 3)
+        reasons.append("Fib 61.8% 支撐失守")
+    elif fib_sig == "反彈壓力區":
+        base = max(0, base - 2)
+        reasons.append("Fib 反彈壓力區")
+
     return min(25, base + ml_bonus)
 
 

@@ -11,9 +11,17 @@ from tw_stock_analyzer.analyzer.scoring import PotentialScore, compute_potential
 from tw_stock_analyzer.data.fetcher import StockFetcher
 from tw_stock_analyzer.data.market_context import MarketContextProvider
 from tw_stock_analyzer.data.models import MarketContext
+from tw_stock_analyzer.indicators.fibonacci import (
+    FIB_SIGNAL_LOOKBACK,
+    compute_fibonacci_retracement,
+)
 from tw_stock_analyzer.indicators.technical import TechnicalIndicators
 from tw_stock_analyzer.predictor.model import PredictionResult, PricePredictor
-from tw_stock_analyzer.predictor.signals import rule_signals_from_row
+from tw_stock_analyzer.predictor.signals import (
+    aggregate_direction,
+    rule_signals_from_row,
+    with_fibonacci_signal,
+)
 
 
 @dataclass
@@ -49,10 +57,21 @@ class StockAnalyzer:
         info = self.fetcher.fetch_info(symbol)
         raw = self.fetcher.fetch(symbol, period=period)
         enriched = self.indicators.compute(raw)
+        fib = compute_fibonacci_retracement(enriched, lookback=FIB_SIGNAL_LOOKBACK)
         prediction = self.predictor.predict(enriched)
         market_context = self.market.fetch(symbol, info["name"])
         latest = enriched.iloc[-1]
-        signals = rule_signals_from_row(latest)
+        signals = with_fibonacci_signal(
+            rule_signals_from_row(latest),
+            float(latest["close"]),
+            fib,
+        )
+        prediction.signals = signals
+        prediction.direction = aggregate_direction(
+            prediction.predicted_change_pct / 100,
+            signals,
+            use_ml=True,
+        )
         potential_score = compute_potential_score(
             latest,
             signals,

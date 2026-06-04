@@ -20,7 +20,7 @@ from tw_stock_analyzer.dashboard.service import run_analysis
 from tw_stock_analyzer.indicators.fibonacci import compute_fibonacci_retracement
 
 # 分析報告結構版本；變更時清除舊 session 快取
-REPORT_CACHE_VERSION = 6
+REPORT_CACHE_VERSION = 7
 
 PERIOD_OPTIONS = {
     "3 個月": "3mo",

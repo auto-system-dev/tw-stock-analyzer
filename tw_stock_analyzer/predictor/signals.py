@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import pandas as pd
 
-BULLISH_SIGNALS = {"多頭排列", "超賣", "金叉偏多", "跌破下軌"}
-BEARISH_SIGNALS = {"空頭排列", "超買", "死叉偏空", "突破上軌"}
+from tw_stock_analyzer.indicators.fibonacci import FibonacciRetracement, fibonacci_signal
+
+BULLISH_SIGNALS = {"多頭排列", "超賣", "金叉偏多", "跌破下軌", "回撤支撐區"}
+BEARISH_SIGNALS = {"空頭排列", "超買", "死叉偏空", "突破上軌", "支撐失守", "反彈壓力區"}
 
 
 def rule_signals_from_row(row: pd.Series) -> dict[str, str]:
@@ -44,6 +46,19 @@ def rule_signals_from_row(row: pd.Series) -> dict[str, str]:
     return signals
 
 
+def with_fibonacci_signal(
+    signals: dict[str, str],
+    close: float,
+    fib: FibonacciRetracement | None,
+    *,
+    tolerance_pct: float = 0.015,
+) -> dict[str, str]:
+    """合併斐波那契支撐／壓力訊號。"""
+    merged = dict(signals)
+    merged["斐波那契"] = fibonacci_signal(close, fib, tolerance_pct=tolerance_pct)
+    return merged
+
+
 def rules_score(signals: dict[str, str]) -> int:
     """僅依技術規則計算加減分。"""
     score = 0
@@ -64,7 +79,7 @@ def aggregate_direction(
     """
     綜合方向：看多 / 看空 / 中性。
 
-    use_ml=False 時僅用四項規則（回測簡化版，避免 look-ahead）。
+    use_ml=False 時僅用技術規則（回測簡化版，不含斐波那契，避免 look-ahead）。
     """
     score = 0
     if use_ml:
