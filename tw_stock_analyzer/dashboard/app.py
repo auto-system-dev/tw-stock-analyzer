@@ -17,6 +17,7 @@ from tw_stock_analyzer.data.market_context import ensure_report_market_context
 from tw_stock_analyzer.dashboard.market_views import render_market_context
 from tw_stock_analyzer.dashboard.screener_service import run_screen
 from tw_stock_analyzer.dashboard.service import run_analysis
+from tw_stock_analyzer.indicators.fibonacci import compute_fibonacci_retracement
 
 # 分析報告結構版本；變更時清除舊 session 快取
 REPORT_CACHE_VERSION = 6
@@ -71,7 +72,7 @@ st.markdown(
 )
 
 
-def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict]:
+def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, int]:
     if "symbol" not in st.session_state:
         st.session_state.symbol = "2330"
 
@@ -111,7 +112,7 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict]:
             screen_opts["run"] = run_screen_btn
             st.divider()
             st.caption("股價：Yahoo · 籌碼/營收：FinMind · 僅供研究參考")
-            return "", "", page, 5, False, False, screen_opts
+            return "", "", page, 5, False, False, screen_opts, False, 60
 
         st.markdown("**常用標的**")
         cols = st.columns(3)
@@ -127,6 +128,14 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict]:
         )
         period_label = st.selectbox("歷史資料期間", list(PERIOD_OPTIONS.keys()), index=3)
         horizon_days = st.slider("預測天數", min_value=1, max_value=20, value=5)
+        show_fibonacci = st.checkbox("顯示斐波那契回撤", value=False)
+        fib_lookback = 60
+        if show_fibonacci:
+            fib_lookback = st.selectbox(
+                "斐波那契波段天數",
+                [60, 120],
+                format_func=lambda x: f"{x} 日",
+            )
         analyze = st.button("開始分析", type="primary", use_container_width=True)
         run_bt = st.button("執行回測", use_container_width=True)
 
@@ -134,7 +143,7 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict]:
         st.caption("股價：Yahoo · 籌碼/營收：FinMind · 僅供研究參考")
 
     period = PERIOD_OPTIONS[period_label]
-    return symbol.strip(), period, page, horizon_days, analyze, run_bt, screen_opts
+    return symbol.strip(), period, page, horizon_days, analyze, run_bt, screen_opts, show_fibonacci, fib_lookback
 
 
 def render_backtest(symbol: str, period: str, horizon_days: int) -> bool:
@@ -346,7 +355,7 @@ def main() -> None:
     if pending_analyze:
         st.session_state.page_mode = "單檔分析"
 
-    symbol, period, page, horizon_days, analyze, run_bt, screen_opts = render_sidebar()
+    symbol, period, page, horizon_days, analyze, run_bt, screen_opts, show_fibonacci, fib_lookback = render_sidebar()
 
     if page == "潛力股掃描":
         render_screener_page(screen_opts)
@@ -408,9 +417,24 @@ def main() -> None:
     )
 
     with tab_chart:
+        fib = (
+            compute_fibonacci_retracement(report.ohlcv, lookback=fib_lookback)
+            if show_fibonacci
+            else None
+        )
+        if show_fibonacci and fib is None:
+            st.caption("資料不足，無法計算斐波那契回撤。")
+        elif show_fibonacci:
+            st.caption(
+                f"斐波那契回撤：{fib.trend}波段 · 近 {fib.lookback_days} 日 · "
+                f"高 {fib.swing_high:,.2f}（{fib.swing_high_date:%Y-%m-%d}）· "
+                f"低 {fib.swing_low:,.2f}（{fib.swing_low_date:%Y-%m-%d}）"
+            )
         st.plotly_chart(
             build_price_chart(
-                report.ohlcv, f"{report.name}（{report.symbol}）股價與均線"
+                report.ohlcv,
+                f"{report.name}（{report.symbol}）股價與均線",
+                fib=fib,
             ),
             use_container_width=True,
             key="chart_price",

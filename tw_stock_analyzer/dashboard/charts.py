@@ -6,9 +6,42 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+from tw_stock_analyzer.indicators.fibonacci import FibonacciRetracement
 
-def build_price_chart(df: pd.DataFrame, title: str) -> go.Figure:
-    """K 線 + 均線 + 布林通道。"""
+FIB_LINE_COLORS = {
+    "0%": "#94a3b8",
+    "38.2%": "#eab308",
+    "50%": "#f59e0b",
+    "61.8%": "#f97316",
+    "100%": "#94a3b8",
+}
+
+
+def _add_fibonacci_lines(fig: go.Figure, df: pd.DataFrame, fib: FibonacciRetracement) -> None:
+    x_start, x_end = df.index[0], df.index[-1]
+    for level in fib.levels:
+        color = FIB_LINE_COLORS.get(level.label, "#eab308")
+        width = 1.8 if level.label in {"38.2%", "50%", "61.8%"} else 1.0
+        fig.add_trace(
+            go.Scatter(
+                x=[x_start, x_end],
+                y=[level.price, level.price],
+                mode="lines",
+                name=f"Fib {level.label} ({level.price:,.1f})",
+                line=dict(color=color, width=width, dash="dash"),
+                opacity=0.9 if level.label in {"38.2%", "50%", "61.8%"} else 0.65,
+                hovertemplate=f"Fib {level.label}: %{{y:,.2f}}<extra></extra>",
+            )
+        )
+
+
+def build_price_chart(
+    df: pd.DataFrame,
+    title: str,
+    *,
+    fib: FibonacciRetracement | None = None,
+) -> go.Figure:
+    """K 線 + 均線 + 布林通道，可選斐波那契回撤。"""
     fig = make_subplots(rows=1, cols=1, shared_xaxes=True)
 
     fig.add_trace(
@@ -41,6 +74,12 @@ def build_price_chart(df: pd.DataFrame, title: str) -> go.Figure:
                 line=dict(color=color, width=1.2, dash=dash_styles.get(col, "solid")),
                 opacity=0.85 if col.startswith("bb_") else 1,
             )
+        )
+
+    if fib is not None:
+        _add_fibonacci_lines(fig, df, fib)
+        title = (
+            f"{title} · Fib 回撤（{fib.trend} · {fib.lookback_days}日）"
         )
 
     fig.update_layout(
