@@ -15,9 +15,8 @@ class TechnicalIndicators:
         result = df.copy()
         close = result["close"]
 
-        result["sma_5"] = SMAIndicator(close, window=5).sma_indicator()
-        result["sma_20"] = SMAIndicator(close, window=20).sma_indicator()
-        result["sma_60"] = SMAIndicator(close, window=60).sma_indicator()
+        result["sma_50"] = SMAIndicator(close, window=50).sma_indicator()
+        result["sma_200"] = SMAIndicator(close, window=200).sma_indicator()
 
         result["rsi_14"] = RSIIndicator(close, window=14).rsi()
 

@@ -30,9 +30,8 @@ class PredictionResult:
 
 
 FEATURE_COLUMNS = [
-    "sma_5",
-    "sma_20",
-    "sma_60",
+    "sma_50",
+    "sma_200",
     "rsi_14",
     "macd",
     "macd_signal",
@@ -67,7 +66,7 @@ class PricePredictor:
         """訓練模型，回傳測試集 R²。"""
         X, y = self._prepare_dataset(df)
         if len(X) < 60:
-            raise ValueError("資料筆數不足，請延長擷取期間（至少約 3 個月）。")
+            raise ValueError("資料筆數不足，請延長擷取期間（至少約 1 年）。")
 
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, shuffle=False

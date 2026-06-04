@@ -12,9 +12,9 @@ def rule_signals_from_row(row: pd.Series) -> dict[str, str]:
     """單日四項技術規則訊號。"""
     signals: dict[str, str] = {}
 
-    if row["sma_5"] > row["sma_20"] > row["sma_60"]:
+    if row["sma_50"] > row["sma_200"]:
         signals["均線"] = "多頭排列"
-    elif row["sma_5"] < row["sma_20"] < row["sma_60"]:
+    elif row["sma_50"] < row["sma_200"]:
         signals["均線"] = "空頭排列"
     else:
         signals["均線"] = "盤整"

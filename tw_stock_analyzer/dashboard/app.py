@@ -19,7 +19,7 @@ from tw_stock_analyzer.dashboard.screener_service import run_screen
 from tw_stock_analyzer.dashboard.service import run_analysis
 
 # 分析報告結構版本；變更時清除舊 session 快取
-REPORT_CACHE_VERSION = 5
+REPORT_CACHE_VERSION = 6
 
 PERIOD_OPTIONS = {
     "3 個月": "3mo",
@@ -456,7 +456,8 @@ def main() -> None:
             "close",
             "volume",
             "rsi_14",
-            "sma_20",
+            "sma_50",
+            "sma_200",
             "macd_hist",
         ]
         st.dataframe(

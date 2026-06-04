@@ -25,9 +25,8 @@ def build_price_chart(df: pd.DataFrame, title: str) -> go.Figure:
     )
 
     overlays = [
-        ("sma_5", "SMA 5", "#f59e0b"),
-        ("sma_20", "SMA 20", "#3b82f6"),
-        ("sma_60", "SMA 60", "#a855f7"),
+        ("sma_50", "SMA 50", "#f59e0b"),
+        ("sma_200", "SMA 200", "#a855f7"),
         ("bb_upper", "布林上軌", "#64748b"),
         ("bb_middle", "布林中軌", "#94a3b8"),
         ("bb_lower", "布林下軌", "#64748b"),
