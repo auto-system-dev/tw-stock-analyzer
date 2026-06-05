@@ -91,6 +91,9 @@ def _chart_html(fig_json: str, hover_json: str, default_key: str) -> str:
   #hover-bar .sep {{ color: #475569; margin: 0 8px; }}
   #hover-bar .label {{ color: #64748b; margin-right: 4px; }}
   #chart {{ width: 100%; height: 880px; }}
+  .js-plotly-plot .hoverlayer {{
+    display: none !important;
+  }}
 </style>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 </head>
@@ -158,9 +161,9 @@ function renderBar(d) {{
 }}
 
 const crosshairLine = {{
-  color: 'rgba(148,163,184,0.85)',
-  width: 1,
-  dash: 'dot',
+  color: 'rgba(148,163,184,0.55)',
+  width: 0.8,
+  dash: 'dash',
 }};
 
 function updateCrosshair(x, closePrice) {{

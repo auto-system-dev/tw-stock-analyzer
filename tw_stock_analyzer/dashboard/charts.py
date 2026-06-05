@@ -52,7 +52,8 @@ def _add_hover_capture(
             mode="markers",
             marker=dict(size=14, color="rgba(0,0,0,0)"),
             showlegend=False,
-            hovertemplate=" ",
+            hovertemplate="<extra></extra>",
+            hoverlabel=dict(bgcolor="rgba(0,0,0,0)", bordercolor="rgba(0,0,0,0)"),
             name=f"_hover_{row}",
         ),
         row=row,
@@ -61,31 +62,20 @@ def _add_hover_capture(
 
 
 def _apply_crosshair(fig: go.Figure, *, n_rows: int = 4) -> None:
-    """啟用十字虛線游標（原生 spike + JS 備援）。"""
+    """設定 hover 行為；十字虛線由 JS 繪製，關閉 Plotly 原生 spike 與 hover 框。"""
     fig.update_layout(
         hovermode="x unified",
         hoverdistance=80,
         spikedistance=-1,
-    )
-    spike_x = dict(
-        showspikes=True,
-        spikemode="across+toaxis",
-        spikesnap="cursor",
-        spikedash="dot",
-        spikecolor="rgba(148,163,184,0.85)",
-        spikethickness=1,
-    )
-    spike_y = dict(
-        showspikes=True,
-        spikemode="across",
-        spikesnap="cursor",
-        spikedash="dot",
-        spikecolor="rgba(148,163,184,0.85)",
-        spikethickness=1,
+        hoverlabel=dict(
+            bgcolor="rgba(0,0,0,0)",
+            bordercolor="rgba(0,0,0,0)",
+            font=dict(size=0, color="rgba(0,0,0,0)"),
+        ),
     )
     for row in range(1, n_rows + 1):
-        fig.update_xaxes(**spike_x, row=row, col=1)
-        fig.update_yaxes(**spike_y, row=row, col=1)
+        fig.update_xaxes(showspikes=False, row=row, col=1)
+        fig.update_yaxes(showspikes=False, row=row, col=1)
 
 
 def _add_price_traces(
