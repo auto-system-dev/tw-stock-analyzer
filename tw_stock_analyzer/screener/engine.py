@@ -9,7 +9,12 @@ import pandas as pd
 from tw_stock_analyzer.analyzer.scoring import compute_potential_score
 from tw_stock_analyzer.data.fetcher import StockFetcher
 from tw_stock_analyzer.data.market_context import MarketContextProvider
+from tw_stock_analyzer.indicators.fibonacci import (
+    FIB_SIGNAL_LOOKBACK,
+    compute_fibonacci_retracement,
+)
 from tw_stock_analyzer.indicators.technical import TechnicalIndicators
+from tw_stock_analyzer.predictor.resonance import compute_bullish_resonance
 from tw_stock_analyzer.predictor.signals import (
     aggregate_direction,
     rule_signals_from_row,
@@ -73,7 +78,7 @@ class ScreenerEngine:
         if universe == "all" and "備援" in label:
             notes.append("FinMind 全市場清單不可用，已改用常用股清單")
 
-        fast_rows: list[tuple[str, int, dict[str, str], pd.Series]] = []
+        fast_rows: list[tuple[str, int, dict[str, str], pd.Series, pd.DataFrame]] = []
         total = len(stock_ids)
 
         for idx, stock_id in enumerate(stock_ids, start=1):
@@ -87,7 +92,7 @@ class ScreenerEngine:
                 latest = enriched.iloc[-1]
                 signals = rule_signals_from_row(latest)
                 fast = self._fast_score(latest, signals)
-                fast_rows.append((stock_id, fast, signals, latest))
+                fast_rows.append((stock_id, fast, signals, latest, enriched))
             except Exception:
                 continue
 
@@ -97,7 +102,7 @@ class ScreenerEngine:
         ranked: list[RankedStock] = []
         deep_total = len(candidates)
 
-        for idx, (stock_id, fast, signals, latest) in enumerate(candidates, start=1):
+        for idx, (stock_id, fast, signals, latest, enriched) in enumerate(candidates, start=1):
             if progress:
                 progress("deep", idx, deep_total)
             try:
@@ -112,7 +117,15 @@ class ScreenerEngine:
                 )
                 direction = aggregate_direction(0.0, signals, use_ml=False)
                 revenue_yoy = ctx.fundamentals.revenue_yoy_pct
-                if not flt.passes(score.total, direction, revenue_yoy):
+                fib = compute_fibonacci_retracement(enriched, lookback=FIB_SIGNAL_LOOKBACK)
+                resonance = compute_bullish_resonance(enriched, fib)
+                if not flt.passes(
+                    score.total,
+                    direction,
+                    revenue_yoy,
+                    resonance_passed=resonance.passed_count,
+                    resonance_total=resonance.total,
+                ):
                     continue
                 ranked.append(
                     RankedStock(
@@ -121,6 +134,8 @@ class ScreenerEngine:
                         score=score,
                         direction=direction,
                         fast_score=fast,
+                        resonance_passed=resonance.passed_count,
+                        resonance_total=resonance.total,
                     )
                 )
             except Exception:

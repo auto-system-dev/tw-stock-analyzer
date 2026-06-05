@@ -17,12 +17,16 @@ def run_screen(
     min_score: int,
     bullish_only: bool,
     period: str,
+    resonance_full_only: bool = False,
+    resonance_min_4: bool = False,
 ) -> ScreenerResult:
     sym_list = [s.strip() for s in symbols_csv.split(",") if s.strip()] or None
     flt = ScreenerFilters(
         min_score=min_score,
         top_n=top_n,
         bullish_only=bullish_only,
+        resonance_full_only=resonance_full_only,
+        resonance_min=4 if resonance_min_4 and not resonance_full_only else None,
     )
     return ScreenerEngine(period=period).scan(
         universe=universe,

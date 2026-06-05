@@ -14,8 +14,25 @@ class ScreenerFilters:
     deep_candidates: int = 50
     bullish_only: bool = False
     min_revenue_yoy: float | None = None
+    resonance_full_only: bool = False
+    resonance_min: int | None = None
 
-    def passes(self, total: int, direction: str, revenue_yoy: float | None) -> bool:
+    def passes_resonance(self, passed: int, total: int) -> bool:
+        if self.resonance_full_only:
+            return passed == total
+        if self.resonance_min is not None:
+            return passed >= self.resonance_min
+        return True
+
+    def passes(
+        self,
+        total: int,
+        direction: str,
+        revenue_yoy: float | None,
+        *,
+        resonance_passed: int = 0,
+        resonance_total: int = 6,
+    ) -> bool:
         if total < self.min_score:
             return False
         if self.bullish_only and direction != "看多":
@@ -23,4 +40,6 @@ class ScreenerFilters:
         if self.min_revenue_yoy is not None:
             if revenue_yoy is None or revenue_yoy < self.min_revenue_yoy:
                 return False
+        if not self.passes_resonance(resonance_passed, resonance_total):
+            return False
         return True

@@ -108,6 +108,9 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, int]:
             screen_opts["top_n"] = st.slider("Top N", 5, 30, 10)
             screen_opts["min_score"] = st.slider("最低綜合分", 0, 80, 0, step=5)
             screen_opts["bullish_only"] = st.checkbox("僅看多")
+            st.markdown("**多頭共振篩選**")
+            screen_opts["resonance_full_only"] = st.checkbox("僅顯示多頭共振（6/6）")
+            screen_opts["resonance_min_4"] = st.checkbox("至少符合 4/6 項")
             screen_opts["period"] = st.selectbox(
                 "掃描資料期間",
                 list(PERIOD_OPTIONS.keys()),
@@ -293,6 +296,8 @@ def render_screener_page(screen_opts: dict) -> None:
         top_n = screen_opts["top_n"]
         min_score = screen_opts["min_score"]
         bullish_only = screen_opts["bullish_only"]
+        resonance_full_only = screen_opts.get("resonance_full_only", False)
+        resonance_min_4 = screen_opts.get("resonance_min_4", False)
         period = PERIOD_OPTIONS[screen_opts["period"]]
 
         try:
@@ -304,6 +309,8 @@ def render_screener_page(screen_opts: dict) -> None:
                     min_score,
                     bullish_only,
                     period,
+                    resonance_full_only,
+                    resonance_min_4,
                 )
             st.session_state["screener_result"] = result
         except Exception as e:
@@ -323,7 +330,12 @@ def render_screener_page(screen_opts: dict) -> None:
         st.caption(note)
 
     if not result.ranked:
-        st.warning("無符合條件的標的，請調低最低分或更換股票池。")
+        filter_hint = ""
+        if screen_opts.get("resonance_full_only"):
+            filter_hint = "（已啟用 6/6 共振篩選）"
+        elif screen_opts.get("resonance_min_4"):
+            filter_hint = "（已啟用至少 4/6 共振篩選）"
+        st.warning(f"無符合條件的標的，請調低最低分或更換股票池。{filter_hint}")
         return
 
     rows = []
@@ -334,6 +346,7 @@ def render_screener_page(screen_opts: dict) -> None:
                 "排名": i,
                 "代號": row.symbol,
                 "名稱": row.name,
+                "共振": row.resonance_label,
                 "總分": s.total,
                 "等級": s.grade,
                 "持有類型": s.holding_type,
