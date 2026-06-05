@@ -11,7 +11,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from tw_stock_analyzer.dashboard.charts import build_combined_chart
-from tw_stock_analyzer.indicators.chart_timeframe import ChartTimeframeSpec, TIMEFRAME_SPECS
+from tw_stock_analyzer.indicators.chart_timeframe import ChartTimeframeSpec, TIMEFRAME_SPECS, hover_key, format_chart_index
 from tw_stock_analyzer.indicators.fibonacci import FibonacciRetracement
 
 
@@ -30,12 +30,13 @@ def build_hover_data(
     prev_close: float | None = None
 
     for idx, row in df.iterrows():
-        key = pd.Timestamp(idx).strftime("%Y-%m-%d")
+        key = hover_key(idx)
+        display_date = format_chart_index(idx, spec)
         close = float(row["close"])
         change = close - prev_close if prev_close is not None else 0.0
         change_pct = (change / prev_close * 100) if prev_close else 0.0
         data_map[key] = {
-            "date": key,
+            "date": display_date,
             "close": close,
             "open": float(row["open"]),
             "high": float(row["high"]),
@@ -123,9 +124,9 @@ function fmtVol(n) {{
 function xToKey(x) {{
   const d = new Date(x);
   if (!Number.isNaN(d.getTime())) {{
-    return d.toISOString().slice(0, 10);
+    return String(d.getTime());
   }}
-  return String(x).slice(0, 10);
+  return String(x);
 }}
 
 function renderBar(d) {{

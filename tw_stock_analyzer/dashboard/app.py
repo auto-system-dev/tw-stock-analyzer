@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pandas as pd
 import streamlit as st
 
 from tw_stock_analyzer.analyzer.engine import AnalysisReport
@@ -17,14 +18,21 @@ from tw_stock_analyzer.indicators.chart_timeframe import (
     CHART_TIMEFRAME_OPTIONS,
     TIMEFRAME_SPECS,
     display_range_options_for,
+    fetch_intraday_chart_data,
     fib_lookback_bars,
+    format_chart_index,
     prepare_chart_data,
     slice_chart_display_range,
 )
 from tw_stock_analyzer.indicators.fibonacci import compute_fibonacci_retracement
 
 # 分析報告結構版本；變更時清除舊 session 快取
-REPORT_CACHE_VERSION = 9
+REPORT_CACHE_VERSION = 10
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _load_intraday_chart(symbol: str, timeframe: str) -> pd.DataFrame:
+    return fetch_intraday_chart_data(symbol, timeframe)
 
 PERIOD_OPTIONS = {
     "3 個月": "3mo",
@@ -465,13 +473,22 @@ def main() -> None:
                 key=f"chart_display_range_{chart_timeframe}",
             )
         chart_spec = TIMEFRAME_SPECS[chart_timeframe]
-        st.caption(
-            "圖表週期與顯示範圍僅影響 K 線；均線等指標依側欄「歷史資料期間」完整資料計算。"
-            " 訊號、評分與預測仍依日線。"
-        )
+        if chart_spec.is_intraday:
+            st.caption(
+                "分 K 資料來自 Yahoo Finance（可能有 15–20 分鐘延遲）；"
+                "僅供圖表參考，訊號、評分、掃描與預測仍依日線。"
+            )
+        else:
+            st.caption(
+                "圖表週期與顯示範圍僅影響 K 線；均線等指標依側欄「歷史資料期間」完整資料計算。"
+                " 訊號、評分與預測仍依日線。"
+            )
 
         try:
-            chart_df = prepare_chart_data(report.ohlcv, chart_timeframe)
+            if chart_spec.is_intraday:
+                chart_df = _load_intraday_chart(report.symbol, chart_timeframe)
+            else:
+                chart_df = prepare_chart_data(report.ohlcv, chart_timeframe)
         except ValueError as e:
             st.warning(str(e))
             chart_df = report.ohlcv
@@ -489,10 +506,12 @@ def main() -> None:
         if show_fibonacci and fib is None:
             st.caption("資料不足，無法計算斐波那契回撤。")
         elif show_fibonacci:
+            hi = format_chart_index(fib.swing_high_date, chart_spec)
+            lo = format_chart_index(fib.swing_low_date, chart_spec)
             st.caption(
                 f"斐波那契回撤：{fib.trend}波段 · 近 {fib_bars} {chart_spec.fib_unit} · "
-                f"高 {fib.swing_high:,.2f}（{fib.swing_high_date:%Y-%m-%d}）· "
-                f"低 {fib.swing_low:,.2f}（{fib.swing_low_date:%Y-%m-%d}）"
+                f"高 {fib.swing_high:,.2f}（{hi}）· "
+                f"低 {fib.swing_low:,.2f}（{lo}）"
             )
         render_interactive_chart(
             display_df,
