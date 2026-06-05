@@ -29,24 +29,37 @@ TIMEFRAME_SPECS: dict[str, ChartTimeframeSpec] = {
 
 CHART_TIMEFRAME_OPTIONS = tuple(TIMEFRAME_SPECS.keys())
 
-DISPLAY_RANGE_OPTIONS: tuple[str, ...] = ("3 個月", "6 個月", "12 個月", "全部")
-
-DISPLAY_RANGE_MONTHS: dict[str, int | None] = {
-    "3 個月": 3,
-    "6 個月": 6,
-    "12 個月": 12,
-    "全部": None,
+DISPLAY_RANGES_BY_TIMEFRAME: dict[str, tuple[str, ...]] = {
+    "日線": ("3 個月", "6 個月", "12 個月"),
+    "週線": ("1 年", "3 年", "5 年"),
+    "月線": ("2 年", "5 年", "10 年"),
 }
+
+DISPLAY_RANGE_OFFSET: dict[str, pd.DateOffset] = {
+    "3 個月": pd.DateOffset(months=3),
+    "6 個月": pd.DateOffset(months=6),
+    "12 個月": pd.DateOffset(months=12),
+    "1 年": pd.DateOffset(years=1),
+    "3 年": pd.DateOffset(years=3),
+    "5 年": pd.DateOffset(years=5),
+    "2 年": pd.DateOffset(years=2),
+    "10 年": pd.DateOffset(years=10),
+}
+
+
+def display_range_options_for(timeframe: str) -> tuple[str, ...]:
+    """依 K 線週期回傳對應顯示範圍選項。"""
+    return DISPLAY_RANGES_BY_TIMEFRAME[timeframe]
 
 
 def slice_chart_display_range(df: pd.DataFrame, range_label: str) -> pd.DataFrame:
     """依標籤裁切圖表顯示區間（指標應在完整資料上先算好再呼叫）。"""
-    months = DISPLAY_RANGE_MONTHS.get(range_label)
-    if months is None or df.empty:
+    offset = DISPLAY_RANGE_OFFSET.get(range_label)
+    if offset is None or df.empty:
         return df
 
     end = pd.Timestamp(df.index.max())
-    start = end - pd.DateOffset(months=months)
+    start = end - offset
     sliced = df.loc[df.index >= start]
     return sliced if not sliced.empty else df
 

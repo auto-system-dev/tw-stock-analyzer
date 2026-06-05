@@ -19,8 +19,8 @@ from tw_stock_analyzer.dashboard.screener_service import run_screen
 from tw_stock_analyzer.dashboard.service import run_analysis
 from tw_stock_analyzer.indicators.chart_timeframe import (
     CHART_TIMEFRAME_OPTIONS,
-    DISPLAY_RANGE_OPTIONS,
     TIMEFRAME_SPECS,
+    display_range_options_for,
     fib_lookback_bars,
     prepare_chart_data,
     slice_chart_display_range,
@@ -36,6 +36,7 @@ PERIOD_OPTIONS = {
     "1 年": "1y",
     "2 年": "2y",
     "5 年": "5y",
+    "10 年": "10y",
 }
 
 DIRECTION_STYLE = {
@@ -434,11 +435,13 @@ def main() -> None:
                 key="chart_timeframe",
             )
         with ctrl2:
+            range_options = display_range_options_for(chart_timeframe)
             chart_range = st.radio(
                 "顯示範圍",
-                DISPLAY_RANGE_OPTIONS,
+                range_options,
                 horizontal=True,
-                key="chart_display_range",
+                index=min(1, len(range_options) - 1),
+                key=f"chart_display_range_{chart_timeframe}",
             )
         chart_spec = TIMEFRAME_SPECS[chart_timeframe]
         st.caption(
