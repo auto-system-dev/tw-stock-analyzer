@@ -70,7 +70,6 @@ def _apply_crosshair(fig: go.Figure, *, n_rows: int = 4) -> None:
         hoverlabel=dict(
             bgcolor="rgba(0,0,0,0)",
             bordercolor="rgba(0,0,0,0)",
-            font=dict(size=0, color="rgba(0,0,0,0)"),
         ),
     )
     for row in range(1, n_rows + 1):
