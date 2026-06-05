@@ -7,11 +7,7 @@ import streamlit as st
 from tw_stock_analyzer.analyzer.engine import AnalysisReport
 from tw_stock_analyzer.backtest.engine import ComparisonReport
 from tw_stock_analyzer.dashboard.backtest_service import run_backtest
-from tw_stock_analyzer.dashboard.charts import (
-    build_indicator_chart,
-    build_price_chart,
-    build_volume_chart,
-)
+from tw_stock_analyzer.dashboard.interactive_chart import render_interactive_chart
 from tw_stock_analyzer.dashboard.equity_chart import build_equity_chart
 from tw_stock_analyzer.data.market_context import ensure_report_market_context
 from tw_stock_analyzer.dashboard.market_views import render_market_context
@@ -473,27 +469,12 @@ def main() -> None:
                 f"高 {fib.swing_high:,.2f}（{fib.swing_high_date:%Y-%m-%d}）· "
                 f"低 {fib.swing_low:,.2f}（{fib.swing_low_date:%Y-%m-%d}）"
             )
-        chart_key_suffix = f"{chart_timeframe}_{chart_range}"
-        st.plotly_chart(
-            build_price_chart(
-                display_df,
-                f"{report.name}（{report.symbol}）股價與均線",
-                fib=fib,
-                spec=chart_spec,
-                fib_unit=chart_spec.fib_unit,
-            ),
-            use_container_width=True,
-            key=f"chart_price_{chart_key_suffix}",
-        )
-        st.plotly_chart(
-            build_indicator_chart(display_df),
-            use_container_width=True,
-            key=f"chart_indicator_{chart_key_suffix}",
-        )
-        st.plotly_chart(
-            build_volume_chart(display_df),
-            use_container_width=True,
-            key=f"chart_volume_{chart_key_suffix}",
+        render_interactive_chart(
+            display_df,
+            f"{report.name}（{report.symbol}）股價與均線",
+            fib=fib,
+            spec=chart_spec,
+            fib_unit=chart_spec.fib_unit,
         )
 
     with tab_signal:
