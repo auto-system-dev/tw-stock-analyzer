@@ -52,6 +52,7 @@ TIMEFRAME_SPECS: dict[str, ChartTimeframeSpec] = {
 }
 
 CHART_TIMEFRAME_OPTIONS = tuple(TIMEFRAME_SPECS.keys())
+CHART_TIMEFRAME_DEFAULT = "日線"
 
 DISPLAY_RANGES_BY_TIMEFRAME: dict[str, tuple[str, ...]] = {
     "1分": ("1 日", "3 日", "5 日"),

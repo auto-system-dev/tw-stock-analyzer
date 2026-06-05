@@ -139,13 +139,15 @@ def _add_price_traces(
     for col_name, label, color in overlays:
         if col_name not in df.columns or df[col_name].isna().all():
             continue
+        is_bb = col_name.startswith("bb_")
         fig.add_trace(
             go.Scatter(
                 x=df.index,
                 y=df[col_name],
                 name=label,
                 line=dict(color=color, width=1.2, dash=dash_styles.get(col_name, "solid")),
-                opacity=0.85 if col_name.startswith("bb_") else 1,
+                opacity=0.85 if is_bb else 1,
+                showlegend=not is_bb,
                 hoverinfo=hover,
             ),
             row=row,
@@ -187,6 +189,7 @@ def build_combined_chart(
             name="成交量",
             marker_color=vol_colors,
             hoverinfo="skip",
+            showlegend=False,
         ),
         row=2,
         col=1,
@@ -199,6 +202,7 @@ def build_combined_chart(
             name="RSI",
             line=dict(color="#38bdf8"),
             hoverinfo="skip",
+            showlegend=False,
         ),
         row=3,
         col=1,
@@ -213,6 +217,7 @@ def build_combined_chart(
             name="MACD 柱",
             marker_color=["#22c55e" if v >= 0 else "#ef4444" for v in df["macd_hist"]],
             hoverinfo="skip",
+            showlegend=False,
         ),
         row=4,
         col=1,
@@ -224,6 +229,7 @@ def build_combined_chart(
             name="MACD",
             line=dict(color="#3b82f6", width=1.5),
             hoverinfo="skip",
+            showlegend=False,
         ),
         row=4,
         col=1,
@@ -235,6 +241,7 @@ def build_combined_chart(
             name="Signal",
             line=dict(color="#f59e0b", width=1.2),
             hoverinfo="skip",
+            showlegend=False,
         ),
         row=4,
         col=1,
@@ -242,11 +249,19 @@ def build_combined_chart(
 
     title = f"{title}（{chart_spec.label}）"
     fig.update_layout(
-        title=title,
+        title=dict(text=title, x=0.01, xanchor="left", font=dict(size=14)),
         xaxis_rangeslider_visible=False,
         height=880,
-        margin=dict(l=48, r=88 if fib is not None else 24, t=72 if fib is not None else 56, b=28),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=40, r=88 if fib is not None else 20, t=90, b=28),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.01,
+            xanchor="left",
+            x=0,
+            font=dict(size=10),
+            bgcolor="rgba(0,0,0,0)",
+        ),
         template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",

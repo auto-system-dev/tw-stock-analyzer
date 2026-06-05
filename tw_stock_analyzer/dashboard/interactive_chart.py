@@ -64,6 +64,7 @@ def _chart_html(fig_json: str, hover_json: str, default_key: str) -> str:
 <html>
 <head>
 <meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
 <style>
   * {{ box-sizing: border-box; }}
   body {{
@@ -94,6 +95,18 @@ def _chart_html(fig_json: str, hover_json: str, default_key: str) -> str:
   #chart {{ width: 100%; height: 880px; }}
   .js-plotly-plot .hoverlayer {{
     display: none !important;
+  }}
+  @media (max-width: 768px) {{
+    #chart {{ height: 62vh; min-height: 420px; max-height: 680px; }}
+    #hover-bar {{
+      font-size: 12px;
+      padding: 8px 10px;
+      white-space: normal;
+      line-height: 1.65;
+    }}
+    #hover-bar .sep {{ display: none; }}
+    #hover-bar .price {{ font-size: 14px; display: block; margin: 2px 0; }}
+    .modebar {{ transform: scale(0.85); transform-origin: top right; }}
   }}
 </style>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
@@ -214,14 +227,22 @@ Plotly.newPlot(gd, figObj.data, figObj.layout, {{
 
 renderBar(dataMap[defaultKey]);
 
-gd.on('plotly_hover', (event) => {{
-  if (!event.points || !event.points.length) return;
-  const x = event.points[0].x;
+function showPoint(x) {{
   const key = xToKey(x);
   if (dataMap[key]) {{
     renderBar(dataMap[key]);
     updateCrosshair(x, dataMap[key].close);
   }}
+}}
+
+gd.on('plotly_hover', (event) => {{
+  if (!event.points || !event.points.length) return;
+  showPoint(event.points[0].x);
+}});
+
+gd.on('plotly_click', (event) => {{
+  if (!event.points || !event.points.length) return;
+  showPoint(event.points[0].x);
 }});
 
 gd.on('plotly_unhover', () => {{
@@ -256,4 +277,4 @@ def render_interactive_chart(
     fig_json = pio.to_json(fig)
     hover_json = json.dumps(hover_map, ensure_ascii=False)
     html = _chart_html(fig_json, hover_json, default_key)
-    components.html(html, height=960, scrolling=False)
+    components.html(html, height=960, scrolling=True)

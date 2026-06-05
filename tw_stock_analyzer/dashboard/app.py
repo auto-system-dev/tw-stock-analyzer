@@ -15,6 +15,7 @@ from tw_stock_analyzer.dashboard.market_views import render_market_context
 from tw_stock_analyzer.dashboard.screener_service import run_screen
 from tw_stock_analyzer.dashboard.service import run_analysis
 from tw_stock_analyzer.indicators.chart_timeframe import (
+    CHART_TIMEFRAME_DEFAULT,
     CHART_TIMEFRAME_OPTIONS,
     TIMEFRAME_SPECS,
     display_range_options_for,
@@ -27,7 +28,7 @@ from tw_stock_analyzer.indicators.chart_timeframe import (
 from tw_stock_analyzer.indicators.fibonacci import compute_fibonacci_retracement
 
 # 分析報告結構版本；變更時清除舊 session 快取
-REPORT_CACHE_VERSION = 10
+REPORT_CACHE_VERSION = 12
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -54,7 +55,7 @@ st.set_page_config(
     page_title="台股分析儀表板",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 st.markdown(
@@ -78,6 +79,23 @@ st.markdown(
         border: 1px solid rgba(255,255,255,0.08);
         border-radius: 0.6rem;
         padding: 0.75rem 1rem;
+    }
+    @media (max-width: 768px) {
+        [data-testid="stMainBlockContainer"],
+        .main .block-container,
+        .block-container {
+            padding-top: 1rem;
+            padding-left: 0.75rem;
+            padding-right: 0.75rem;
+        }
+        div[data-testid="stMetric"] {
+            padding: 0.5rem 0.65rem;
+        }
+        [data-testid="stTabs"] button {
+            font-size: 0.85rem;
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
+        }
     }
     </style>
     """,
@@ -384,7 +402,7 @@ def render_screener_page(screen_opts: dict) -> None:
 
 def main() -> None:
     if st.session_state.get("report_cache_version") != REPORT_CACHE_VERSION:
-        for key in ("last_report", "cache_key"):
+        for key in ("last_report", "cache_key", "chart_timeframe"):
             st.session_state.pop(key, None)
         st.session_state["report_cache_version"] = REPORT_CACHE_VERSION
 
@@ -455,23 +473,19 @@ def main() -> None:
     )
 
     with tab_chart:
-        ctrl1, ctrl2 = st.columns(2)
-        with ctrl1:
-            chart_timeframe = st.radio(
-                "K 線週期",
-                CHART_TIMEFRAME_OPTIONS,
-                horizontal=True,
-                key="chart_timeframe",
-            )
-        with ctrl2:
-            range_options = display_range_options_for(chart_timeframe)
-            chart_range = st.radio(
-                "顯示範圍",
-                range_options,
-                horizontal=True,
-                index=min(1, len(range_options) - 1),
-                key=f"chart_display_range_{chart_timeframe}",
-            )
+        chart_timeframe = st.selectbox(
+            "K 線週期",
+            CHART_TIMEFRAME_OPTIONS,
+            index=CHART_TIMEFRAME_OPTIONS.index(CHART_TIMEFRAME_DEFAULT),
+            key="chart_timeframe",
+        )
+        range_options = display_range_options_for(chart_timeframe)
+        chart_range = st.selectbox(
+            "顯示範圍",
+            range_options,
+            index=min(1, len(range_options) - 1),
+            key=f"chart_display_range_{chart_timeframe}",
+        )
         chart_spec = TIMEFRAME_SPECS[chart_timeframe]
         if chart_spec.is_intraday:
             st.caption(
