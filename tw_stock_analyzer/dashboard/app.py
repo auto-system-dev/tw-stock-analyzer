@@ -113,7 +113,7 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, int]:
                 list(PERIOD_OPTIONS.keys()),
                 index=2,
             )
-            run_screen_btn = st.button("開始掃描", type="primary", use_container_width=True)
+            run_screen_btn = st.button("開始掃描", type="primary", width="stretch")
             screen_opts["run"] = run_screen_btn
             st.divider()
             st.caption("股價：Yahoo · 籌碼/營收：FinMind · 僅供研究參考")
@@ -122,7 +122,7 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, int]:
         st.markdown("**常用標的**")
         cols = st.columns(3)
         for i, code in enumerate(["2330", "2317", "2454", "2303", "2881"]):
-            if cols[i % 3].button(code, use_container_width=True, key=f"preset_{code}"):
+            if cols[i % 3].button(code, width="stretch", key=f"preset_{code}"):
                 st.session_state.symbol = code
                 st.rerun()
 
@@ -141,8 +141,8 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, int]:
                 [60, 120],
                 format_func=lambda x: f"{x} 日",
             )
-        analyze = st.button("開始分析", type="primary", use_container_width=True)
-        run_bt = st.button("執行回測", use_container_width=True)
+        analyze = st.button("開始分析", type="primary", width="stretch")
+        run_bt = st.button("執行回測", width="stretch")
 
         st.divider()
         st.caption("股價：Yahoo · 籌碼/營收：FinMind · 僅供研究參考")
@@ -184,7 +184,7 @@ def _display_backtest(comparison: ComparisonReport, *, chart_key: str = "bt_equi
     curves = {s.metrics.strategy_name: s.equity_curve for s in comparison.strategies}
     st.plotly_chart(
         build_equity_chart(curves, comparison.buy_hold_return_pct),
-        use_container_width=True,
+        width="stretch",
         key=chart_key,
     )
 
@@ -203,7 +203,7 @@ def _display_backtest(comparison: ComparisonReport, *, chart_key: str = "bt_equi
                 "vs B&H%": m.vs_buy_hold_pct,
             }
         )
-    st.dataframe(rows, use_container_width=True)
+    st.dataframe(rows, width="stretch")
 
     best = max(comparison.strategies, key=lambda s: s.metrics.total_return_pct)
     st.success(
@@ -335,7 +335,7 @@ def render_screener_page(screen_opts: dict) -> None:
                 "重點": " · ".join(s.reasons[:2]),
             }
         )
-    st.dataframe(rows, use_container_width=True)
+    st.dataframe(rows, width="stretch")
 
     st.markdown("**點選代號進行單檔分析**")
     pick_cols = st.columns(min(len(result.ranked), 5))
@@ -343,7 +343,7 @@ def render_screener_page(screen_opts: dict) -> None:
         col.button(
             f"{row.symbol} {row.name[:4]}",
             key=f"pick_{row.symbol}",
-            use_container_width=True,
+            width="stretch",
             on_click=_navigate_to_analyze,
             args=(row.symbol,),
         )
@@ -513,7 +513,7 @@ def main() -> None:
         ]
         st.dataframe(
             report.ohlcv[display_cols].tail(10).sort_index(ascending=False),
-            use_container_width=True,
+            width="stretch",
         )
 
 
