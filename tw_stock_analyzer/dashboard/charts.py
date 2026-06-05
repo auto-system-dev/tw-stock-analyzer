@@ -53,7 +53,6 @@ def _add_hover_capture(
             marker=dict(size=14, color="rgba(0,0,0,0)"),
             showlegend=False,
             hovertemplate="<extra></extra>",
-            hoverlabel=dict(bgcolor="rgba(0,0,0,0)", bordercolor="rgba(0,0,0,0)"),
             name=f"_hover_{row}",
         ),
         row=row,
@@ -62,15 +61,20 @@ def _add_hover_capture(
 
 
 def _apply_crosshair(fig: go.Figure, *, n_rows: int = 4) -> None:
-    """設定 hover 行為；十字虛線由 JS 繪製，關閉 Plotly 原生 spike 與 hover 框。"""
+    """設定 hover 行為；十字虛線由 JS 繪製，hover 白框由 CSS 隱藏。"""
+    # #region agent log
+    import json, sys, time
+    _payload = {"sessionId": "4e6749", "hypothesisId": "B", "location": "charts.py:_apply_crosshair", "message": "apply crosshair v2", "data": {"hoverlabel": "removed"}, "timestamp": int(time.time() * 1000), "runId": "deploy-fix"}
+    print(json.dumps(_payload), file=sys.stderr)
+    try:
+        open("debug-4e6749.log", "a", encoding="utf-8").write(json.dumps(_payload, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+    # #endregion
     fig.update_layout(
         hovermode="x unified",
         hoverdistance=80,
         spikedistance=-1,
-        hoverlabel=dict(
-            bgcolor="rgba(0,0,0,0)",
-            bordercolor="rgba(0,0,0,0)",
-        ),
     )
     for row in range(1, n_rows + 1):
         fig.update_xaxes(showspikes=False, row=row, col=1)
