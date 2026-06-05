@@ -24,7 +24,7 @@ from tw_stock_analyzer.indicators.chart_timeframe import (
 from tw_stock_analyzer.indicators.fibonacci import compute_fibonacci_retracement
 
 # 分析報告結構版本；變更時清除舊 session 快取
-REPORT_CACHE_VERSION = 7
+REPORT_CACHE_VERSION = 9
 
 PERIOD_OPTIONS = {
     "3 個月": "3mo",
@@ -255,7 +255,19 @@ def render_potential_score(report: AnalysisReport) -> None:
 def render_signals(report: AnalysisReport) -> None:
     pred = report.prediction
     latest = report.ohlcv.iloc[-1]
+    resonance = report.bullish_resonance
 
+    st.subheader("多頭共振檢查")
+    if resonance.all_passed:
+        st.success(f"🟢 多頭共振成立（{resonance.passed_count}/{resonance.total}）— 六項技術條件同時符合")
+    else:
+        st.info(f"符合 {resonance.passed_count}/{resonance.total} 項 · 尚未完全共振")
+
+    for item in resonance.items:
+        icon = "✅" if item.passed else "⬜"
+        st.markdown(f"{icon} **{item.label}** — {item.detail}")
+
+    st.divider()
     st.subheader("技術訊號")
     cols = st.columns(len(pred.signals) + 2)
     for col, (name, status) in zip(cols, pred.signals.items()):

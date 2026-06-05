@@ -93,6 +93,19 @@ def _is_near(price: float, level: float, tolerance_pct: float) -> bool:
     return abs(price - level) / level <= tolerance_pct
 
 
+def is_near_fib_level(
+    price: float,
+    fib: FibonacciRetracement | None,
+    label: str,
+    *,
+    tolerance_pct: float = FIB_TOLERANCE_PCT,
+) -> bool:
+    """收盤價是否落在指定 Fib 比例價位附近。"""
+    if fib is None:
+        return False
+    return _is_near(price, _level_price(fib, label), tolerance_pct)
+
+
 def fibonacci_signal(
     close: float,
     fib: FibonacciRetracement | None,

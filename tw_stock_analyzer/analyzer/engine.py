@@ -17,6 +17,7 @@ from tw_stock_analyzer.indicators.fibonacci import (
 )
 from tw_stock_analyzer.indicators.technical import TechnicalIndicators
 from tw_stock_analyzer.predictor.model import PredictionResult, PricePredictor
+from tw_stock_analyzer.predictor.resonance import BullishResonance, compute_bullish_resonance
 from tw_stock_analyzer.predictor.signals import (
     aggregate_direction,
     rule_signals_from_row,
@@ -37,6 +38,7 @@ class AnalysisReport:
     prediction: PredictionResult
     market_context: MarketContext
     potential_score: PotentialScore
+    bullish_resonance: BullishResonance
     summary: str
 
 
@@ -79,6 +81,7 @@ class StockAnalyzer:
             prediction,
             use_ml=True,
         )
+        bullish_resonance = compute_bullish_resonance(enriched, fib)
 
         summary = self._build_summary(info["name"], prediction, market_context, potential_score)
         return AnalysisReport(
@@ -91,6 +94,7 @@ class StockAnalyzer:
             prediction=prediction,
             market_context=market_context,
             potential_score=potential_score,
+            bullish_resonance=bullish_resonance,
             summary=summary,
         )
 
