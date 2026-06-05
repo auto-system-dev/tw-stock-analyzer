@@ -18,22 +18,53 @@ FIB_LINE_COLORS = {
 }
 
 
-def _add_fibonacci_lines(fig: go.Figure, df: pd.DataFrame, fib: FibonacciRetracement) -> None:
+def _add_fibonacci_levels(
+    fig: go.Figure,
+    df: pd.DataFrame,
+    fib: FibonacciRetracement,
+    *,
+    row: int = 1,
+    col: int = 1,
+    hover_info: str | None = "skip",
+) -> None:
+    """繪製 Fib 水平線；標籤放圖表右側，不佔用頂部圖例。"""
     x_start, x_end = df.index[0], df.index[-1]
     for level in fib.levels:
         color = FIB_LINE_COLORS.get(level.label, "#eab308")
         width = 1.8 if level.label in {"38.2%", "50%", "61.8%"} else 1.0
-        fig.add_trace(
-            go.Scatter(
-                x=[x_start, x_end],
-                y=[level.price, level.price],
-                mode="lines",
-                name=f"Fib {level.label} ({level.price:,.1f})",
-                line=dict(color=color, width=width, dash="dash"),
-                opacity=0.9 if level.label in {"38.2%", "50%", "61.8%"} else 0.65,
-                hovertemplate=f"Fib {level.label}: %{{y:,.2f}}<extra></extra>",
-            )
+        trace_kwargs: dict = dict(
+            x=[x_start, x_end],
+            y=[level.price, level.price],
+            mode="lines",
+            line=dict(color=color, width=width, dash="dash"),
+            opacity=0.9 if level.label in {"38.2%", "50%", "61.8%"} else 0.65,
+            showlegend=False,
         )
+        if hover_info == "skip":
+            trace_kwargs["hoverinfo"] = "skip"
+        else:
+            trace_kwargs["hovertemplate"] = f"Fib {level.label}: %{{y:,.2f}}<extra></extra>"
+        fig.add_trace(go.Scatter(**trace_kwargs), row=row, col=col)
+
+        fig.add_annotation(
+            x=x_end,
+            y=level.price,
+            text=f"{level.label} {level.price:,.0f}",
+            showarrow=False,
+            xanchor="left",
+            xshift=6,
+            font=dict(size=10, color=color),
+            bgcolor="rgba(15,23,42,0.8)",
+            bordercolor=color,
+            borderwidth=1,
+            borderpad=2,
+            row=row,
+            col=col,
+        )
+
+
+def _add_fibonacci_lines(fig: go.Figure, df: pd.DataFrame, fib: FibonacciRetracement) -> None:
+    _add_fibonacci_levels(fig, df, fib, hover_info="hover")
 
 
 def _add_hover_capture(
@@ -144,24 +175,7 @@ def build_combined_chart(
     _add_price_traces(fig, df, chart_spec, row=1, skip_hover=True)
 
     if fib is not None:
-        x_start, x_end = df.index[0], df.index[-1]
-        for level in fib.levels:
-            color = FIB_LINE_COLORS.get(level.label, "#eab308")
-            width = 1.8 if level.label in {"38.2%", "50%", "61.8%"} else 1.0
-            fig.add_trace(
-                go.Scatter(
-                    x=[x_start, x_end],
-                    y=[level.price, level.price],
-                    mode="lines",
-                    name=f"Fib {level.label} ({level.price:,.1f})",
-                    line=dict(color=color, width=width, dash="dash"),
-                    opacity=0.9 if level.label in {"38.2%", "50%", "61.8%"} else 0.65,
-                    hoverinfo="skip",
-                ),
-                row=1,
-                col=1,
-            )
-        title = f"{title} · Fib 回撤（{fib.trend} · {fib.lookback_days}{fib_unit}）"
+        _add_fibonacci_levels(fig, df, fib, row=1, col=1)
 
     vol_colors = [
         "#ef4444" if c >= o else "#22c55e" for c, o in zip(df["close"], df["open"])
@@ -231,8 +245,8 @@ def build_combined_chart(
         title=title,
         xaxis_rangeslider_visible=False,
         height=880,
-        margin=dict(l=48, r=24, t=56, b=28),
-        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1),
+        margin=dict(l=48, r=88 if fib is not None else 24, t=72 if fib is not None else 56, b=28),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
@@ -269,16 +283,13 @@ def build_price_chart(
 
     if fib is not None:
         _add_fibonacci_lines(fig, df, fib)
-        title = (
-            f"{title} · Fib 回撤（{fib.trend} · {fib.lookback_days}{fib_unit}）"
-        )
 
     title = f"{title}（{chart_spec.label}）"
     fig.update_layout(
         title=title,
         xaxis_rangeslider_visible=False,
         height=420,
-        margin=dict(l=40, r=20, t=50, b=30),
+        margin=dict(l=40, r=88 if fib is not None else 20, t=56, b=30),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
