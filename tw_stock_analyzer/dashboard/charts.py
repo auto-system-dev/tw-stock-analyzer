@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from tw_stock_analyzer.indicators.fibonacci import FibonacciRetracement
+from tw_stock_analyzer.indicators.chart_timeframe import ChartTimeframeSpec, TIMEFRAME_SPECS
 
 FIB_LINE_COLORS = {
     "0%": "#94a3b8",
@@ -40,8 +41,11 @@ def build_price_chart(
     title: str,
     *,
     fib: FibonacciRetracement | None = None,
+    spec: ChartTimeframeSpec | None = None,
+    fib_unit: str = "日",
 ) -> go.Figure:
     """K 線 + 均線 + 布林通道，可選斐波那契回撤。"""
+    chart_spec = spec or TIMEFRAME_SPECS["日線"]
     fig = make_subplots(rows=1, cols=1, shared_xaxes=True)
 
     fig.add_trace(
@@ -58,14 +62,16 @@ def build_price_chart(
     )
 
     overlays = [
-        ("sma_50", "SMA 50", "#f59e0b"),
-        ("sma_200", "SMA 200", "#a855f7"),
+        ("sma_50", f"SMA {chart_spec.sma_fast}", "#f59e0b"),
+        ("sma_200", f"SMA {chart_spec.sma_slow}", "#a855f7"),
         ("bb_upper", "布林上軌", "#64748b"),
         ("bb_middle", "布林中軌", "#94a3b8"),
         ("bb_lower", "布林下軌", "#64748b"),
     ]
     dash_styles = {"bb_upper": "dot", "bb_middle": "dash", "bb_lower": "dot"}
     for col, label, color in overlays:
+        if col not in df.columns or df[col].isna().all():
+            continue
         fig.add_trace(
             go.Scatter(
                 x=df.index,
@@ -79,9 +85,10 @@ def build_price_chart(
     if fib is not None:
         _add_fibonacci_lines(fig, df, fib)
         title = (
-            f"{title} · Fib 回撤（{fib.trend} · {fib.lookback_days}日）"
+            f"{title} · Fib 回撤（{fib.trend} · {fib.lookback_days}{fib_unit}）"
         )
 
+    title = f"{title}（{chart_spec.label}）"
     fig.update_layout(
         title=title,
         xaxis_rangeslider_visible=False,

@@ -17,6 +17,12 @@ from tw_stock_analyzer.data.market_context import ensure_report_market_context
 from tw_stock_analyzer.dashboard.market_views import render_market_context
 from tw_stock_analyzer.dashboard.screener_service import run_screen
 from tw_stock_analyzer.dashboard.service import run_analysis
+from tw_stock_analyzer.indicators.chart_timeframe import (
+    CHART_TIMEFRAME_OPTIONS,
+    TIMEFRAME_SPECS,
+    fib_lookback_bars,
+    prepare_chart_data,
+)
 from tw_stock_analyzer.indicators.fibonacci import compute_fibonacci_retracement
 
 # 分析報告結構版本；變更時清除舊 session 快取
@@ -417,8 +423,26 @@ def main() -> None:
     )
 
     with tab_chart:
+        chart_timeframe = st.radio(
+            "K 線週期",
+            CHART_TIMEFRAME_OPTIONS,
+            horizontal=True,
+            key="chart_timeframe",
+        )
+        chart_spec = TIMEFRAME_SPECS[chart_timeframe]
+        st.caption("圖表週期僅影響 K 線顯示；訊號、評分與預測仍依日線計算。")
+
+        try:
+            chart_df = prepare_chart_data(report.ohlcv, chart_timeframe)
+        except ValueError as e:
+            st.warning(str(e))
+            chart_df = report.ohlcv
+            chart_timeframe = "日線"
+            chart_spec = TIMEFRAME_SPECS["日線"]
+
+        fib_bars = fib_lookback_bars(chart_timeframe, fib_lookback)
         fib = (
-            compute_fibonacci_retracement(report.ohlcv, lookback=fib_lookback)
+            compute_fibonacci_retracement(chart_df, lookback=fib_bars)
             if show_fibonacci
             else None
         )
@@ -426,28 +450,30 @@ def main() -> None:
             st.caption("資料不足，無法計算斐波那契回撤。")
         elif show_fibonacci:
             st.caption(
-                f"斐波那契回撤：{fib.trend}波段 · 近 {fib.lookback_days} 日 · "
+                f"斐波那契回撤：{fib.trend}波段 · 近 {fib_bars} {chart_spec.fib_unit} · "
                 f"高 {fib.swing_high:,.2f}（{fib.swing_high_date:%Y-%m-%d}）· "
                 f"低 {fib.swing_low:,.2f}（{fib.swing_low_date:%Y-%m-%d}）"
             )
         st.plotly_chart(
             build_price_chart(
-                report.ohlcv,
+                chart_df,
                 f"{report.name}（{report.symbol}）股價與均線",
                 fib=fib,
+                spec=chart_spec,
+                fib_unit=chart_spec.fib_unit,
             ),
             use_container_width=True,
-            key="chart_price",
+            key=f"chart_price_{chart_timeframe}",
         )
         st.plotly_chart(
-            build_indicator_chart(report.ohlcv),
+            build_indicator_chart(chart_df),
             use_container_width=True,
-            key="chart_indicator",
+            key=f"chart_indicator_{chart_timeframe}",
         )
         st.plotly_chart(
-            build_volume_chart(report.ohlcv),
+            build_volume_chart(chart_df),
             use_container_width=True,
-            key="chart_volume",
+            key=f"chart_volume_{chart_timeframe}",
         )
 
     with tab_signal:
