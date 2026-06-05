@@ -29,6 +29,27 @@ TIMEFRAME_SPECS: dict[str, ChartTimeframeSpec] = {
 
 CHART_TIMEFRAME_OPTIONS = tuple(TIMEFRAME_SPECS.keys())
 
+DISPLAY_RANGE_OPTIONS: tuple[str, ...] = ("3 個月", "6 個月", "12 個月", "全部")
+
+DISPLAY_RANGE_MONTHS: dict[str, int | None] = {
+    "3 個月": 3,
+    "6 個月": 6,
+    "12 個月": 12,
+    "全部": None,
+}
+
+
+def slice_chart_display_range(df: pd.DataFrame, range_label: str) -> pd.DataFrame:
+    """依標籤裁切圖表顯示區間（指標應在完整資料上先算好再呼叫）。"""
+    months = DISPLAY_RANGE_MONTHS.get(range_label)
+    if months is None or df.empty:
+        return df
+
+    end = pd.Timestamp(df.index.max())
+    start = end - pd.DateOffset(months=months)
+    sliced = df.loc[df.index >= start]
+    return sliced if not sliced.empty else df
+
 
 def fib_lookback_bars(timeframe: str, fib_lookback_days: int) -> int:
     """將日線 Fib 波段天數換算為對應週期 K 棒數。"""

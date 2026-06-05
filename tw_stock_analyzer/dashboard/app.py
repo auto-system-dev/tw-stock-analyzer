@@ -19,9 +19,11 @@ from tw_stock_analyzer.dashboard.screener_service import run_screen
 from tw_stock_analyzer.dashboard.service import run_analysis
 from tw_stock_analyzer.indicators.chart_timeframe import (
     CHART_TIMEFRAME_OPTIONS,
+    DISPLAY_RANGE_OPTIONS,
     TIMEFRAME_SPECS,
     fib_lookback_bars,
     prepare_chart_data,
+    slice_chart_display_range,
 )
 from tw_stock_analyzer.indicators.fibonacci import compute_fibonacci_retracement
 
@@ -423,14 +425,26 @@ def main() -> None:
     )
 
     with tab_chart:
-        chart_timeframe = st.radio(
-            "K 線週期",
-            CHART_TIMEFRAME_OPTIONS,
-            horizontal=True,
-            key="chart_timeframe",
-        )
+        ctrl1, ctrl2 = st.columns(2)
+        with ctrl1:
+            chart_timeframe = st.radio(
+                "K 線週期",
+                CHART_TIMEFRAME_OPTIONS,
+                horizontal=True,
+                key="chart_timeframe",
+            )
+        with ctrl2:
+            chart_range = st.radio(
+                "顯示範圍",
+                DISPLAY_RANGE_OPTIONS,
+                horizontal=True,
+                key="chart_display_range",
+            )
         chart_spec = TIMEFRAME_SPECS[chart_timeframe]
-        st.caption("圖表週期僅影響 K 線顯示；訊號、評分與預測仍依日線計算。")
+        st.caption(
+            "圖表週期與顯示範圍僅影響 K 線；均線等指標依側欄「歷史資料期間」完整資料計算。"
+            " 訊號、評分與預測仍依日線。"
+        )
 
         try:
             chart_df = prepare_chart_data(report.ohlcv, chart_timeframe)
@@ -440,9 +454,11 @@ def main() -> None:
             chart_timeframe = "日線"
             chart_spec = TIMEFRAME_SPECS["日線"]
 
+        display_df = slice_chart_display_range(chart_df, chart_range)
+
         fib_bars = fib_lookback_bars(chart_timeframe, fib_lookback)
         fib = (
-            compute_fibonacci_retracement(chart_df, lookback=fib_bars)
+            compute_fibonacci_retracement(display_df, lookback=fib_bars)
             if show_fibonacci
             else None
         )
@@ -454,26 +470,27 @@ def main() -> None:
                 f"高 {fib.swing_high:,.2f}（{fib.swing_high_date:%Y-%m-%d}）· "
                 f"低 {fib.swing_low:,.2f}（{fib.swing_low_date:%Y-%m-%d}）"
             )
+        chart_key_suffix = f"{chart_timeframe}_{chart_range}"
         st.plotly_chart(
             build_price_chart(
-                chart_df,
+                display_df,
                 f"{report.name}（{report.symbol}）股價與均線",
                 fib=fib,
                 spec=chart_spec,
                 fib_unit=chart_spec.fib_unit,
             ),
             use_container_width=True,
-            key=f"chart_price_{chart_timeframe}",
+            key=f"chart_price_{chart_key_suffix}",
         )
         st.plotly_chart(
-            build_indicator_chart(chart_df),
+            build_indicator_chart(display_df),
             use_container_width=True,
-            key=f"chart_indicator_{chart_timeframe}",
+            key=f"chart_indicator_{chart_key_suffix}",
         )
         st.plotly_chart(
-            build_volume_chart(chart_df),
+            build_volume_chart(display_df),
             use_container_width=True,
-            key=f"chart_volume_{chart_timeframe}",
+            key=f"chart_volume_{chart_key_suffix}",
         )
 
     with tab_signal:
