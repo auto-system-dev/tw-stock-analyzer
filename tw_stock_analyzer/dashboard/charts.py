@@ -36,23 +36,56 @@ def _add_fibonacci_lines(fig: go.Figure, df: pd.DataFrame, fib: FibonacciRetrace
         )
 
 
-def _apply_crosshair(fig: go.Figure) -> None:
-    """啟用十字虛線游標。"""
-    fig.update_layout(hovermode="x")
-    fig.update_xaxes(
+def _add_hover_capture(
+    fig: go.Figure,
+    df: pd.DataFrame,
+    row: int,
+    y_col: str,
+) -> None:
+    """透明 hover 捕捉點，確保各子圖能觸發 plotly_hover。"""
+    if y_col not in df.columns:
+        return
+    fig.add_trace(
+        go.Scatter(
+            x=df.index,
+            y=df[y_col],
+            mode="markers",
+            marker=dict(size=14, color="rgba(0,0,0,0)"),
+            showlegend=False,
+            hovertemplate=" ",
+            name=f"_hover_{row}",
+        ),
+        row=row,
+        col=1,
+    )
+
+
+def _apply_crosshair(fig: go.Figure, *, n_rows: int = 4) -> None:
+    """啟用十字虛線游標（原生 spike + JS 備援）。"""
+    fig.update_layout(
+        hovermode="x unified",
+        hoverdistance=80,
+        spikedistance=-1,
+    )
+    spike_x = dict(
+        showspikes=True,
+        spikemode="across+toaxis",
+        spikesnap="cursor",
+        spikedash="dot",
+        spikecolor="rgba(148,163,184,0.85)",
+        spikethickness=1,
+    )
+    spike_y = dict(
         showspikes=True,
         spikemode="across",
         spikesnap="cursor",
         spikedash="dot",
-        spikecolor="rgba(148,163,184,0.75)",
+        spikecolor="rgba(148,163,184,0.85)",
         spikethickness=1,
     )
-    fig.update_yaxes(
-        showspikes=True,
-        spikedash="dot",
-        spikecolor="rgba(148,163,184,0.75)",
-        spikethickness=1,
-    )
+    for row in range(1, n_rows + 1):
+        fig.update_xaxes(**spike_x, row=row, col=1)
+        fig.update_yaxes(**spike_y, row=row, col=1)
 
 
 def _add_price_traces(
@@ -228,6 +261,10 @@ def build_combined_chart(
     fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)")
     for r in (1, 2, 3):
         fig.update_xaxes(showticklabels=False, row=r, col=1)
+    _add_hover_capture(fig, df, 1, "close")
+    _add_hover_capture(fig, df, 2, "volume")
+    _add_hover_capture(fig, df, 3, "rsi_14")
+    _add_hover_capture(fig, df, 4, "macd")
     _apply_crosshair(fig)
     return fig
 

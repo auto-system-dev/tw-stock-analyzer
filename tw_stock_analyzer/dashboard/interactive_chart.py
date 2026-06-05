@@ -157,7 +157,50 @@ function renderBar(d) {{
   `;
 }}
 
+const crosshairLine = {{
+  color: 'rgba(148,163,184,0.85)',
+  width: 1,
+  dash: 'dot',
+}};
+
+function updateCrosshair(x, closePrice) {{
+  const shapes = baseShapes.slice();
+  shapes.push(
+    {{
+      type: 'line',
+      xref: 'x',
+      yref: 'paper',
+      x0: x,
+      x1: x,
+      y0: 0,
+      y1: 1,
+      line: crosshairLine,
+      layer: 'above',
+    }}
+  );
+  if (closePrice !== null && closePrice !== undefined) {{
+    shapes.push({{
+      type: 'line',
+      xref: 'paper',
+      yref: 'y',
+      x0: 0,
+      x1: 1,
+      y0: closePrice,
+      y1: closePrice,
+      line: crosshairLine,
+      layer: 'above',
+    }});
+  }}
+  Plotly.relayout(gd, {{ shapes }});
+}}
+
+function clearCrosshair() {{
+  Plotly.relayout(gd, {{ shapes: baseShapes.slice() }});
+}}
+
 const gd = document.getElementById('chart');
+const baseShapes = (figObj.layout.shapes || []).slice();
+
 Plotly.newPlot(gd, figObj.data, figObj.layout, {{
   responsive: true,
   displayModeBar: true,
@@ -169,11 +212,16 @@ renderBar(dataMap[defaultKey]);
 
 gd.on('plotly_hover', (event) => {{
   if (!event.points || !event.points.length) return;
-  const key = xToKey(event.points[0].x);
-  if (dataMap[key]) renderBar(dataMap[key]);
+  const x = event.points[0].x;
+  const key = xToKey(x);
+  if (dataMap[key]) {{
+    renderBar(dataMap[key]);
+    updateCrosshair(x, dataMap[key].close);
+  }}
 }});
 
 gd.on('plotly_unhover', () => {{
+  clearCrosshair();
   renderBar(dataMap[defaultKey]);
 }});
 
