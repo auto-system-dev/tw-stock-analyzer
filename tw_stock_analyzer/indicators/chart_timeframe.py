@@ -280,6 +280,7 @@ def fetch_intraday_chart_data(symbol: str, timeframe: str) -> pd.DataFrame:
     # #endregion
     result = compute_chart_indicators(raw, spec)
     result.attrs["source"] = source
+    result.attrs["source_errors"] = source_errors
     return result
 
 
