@@ -20,43 +20,47 @@ from tw_stock_analyzer.indicators.chart_timeframe import (
 class ChartXAxis:
     coords: list
     is_ordinal: bool
-    tick_vals: list[str] | None = None
+    tick_vals: list[int] | None = None
     tick_text: list[str] | None = None
 
 
 def _build_chart_xaxis(df: pd.DataFrame, chart_spec: ChartTimeframeSpec) -> ChartXAxis:
-    """日/週/月線與分 K 改用類別 X 軸，K 線與成交量緊密排列。"""
+    """日/週/月線與分 K 用整數序數 X 軸，消除盤後與假日造成的視覺空洞。"""
     if not uses_ordinal_x_axis(chart_spec):
         return ChartXAxis(coords=df.index.tolist(), is_ordinal=False)
     n = len(df)
-    coords = [format_chart_index(df.index[i], chart_spec) for i in range(n)]
     step = max(1, n // 6)
     tick_idxs = list(range(0, n, step))
     if tick_idxs[-1] != n - 1:
         tick_idxs.append(n - 1)
-    tick_labels = [coords[i] for i in tick_idxs]
+    tick_text = [format_chart_index(df.index[i], chart_spec) for i in tick_idxs]
     return ChartXAxis(
-        coords=coords,
+        coords=list(range(n)),
         is_ordinal=True,
-        tick_vals=tick_labels,
-        tick_text=tick_labels,
+        tick_vals=tick_idxs,
+        tick_text=tick_text,
     )
 
 
 def _apply_ordinal_axis(fig: go.Figure, xaxis: ChartXAxis, *, n_rows: int = 4) -> None:
     if not xaxis.is_ordinal or not xaxis.tick_vals:
         return
-    axis_style = dict(
-        type="category",
-        categoryorder="array",
-        categoryarray=xaxis.coords,
-        tickmode="array",
-        tickvals=xaxis.tick_vals,
-        ticktext=xaxis.tick_text,
-    )
+    n = len(xaxis.coords)
+    x_range = [-0.5, n - 0.5]
     for row in range(1, n_rows + 1):
-        fig.update_xaxes(**axis_style, row=row, col=1)
+        fig.update_xaxes(
+            type="linear",
+            tickmode="array",
+            tickvals=xaxis.tick_vals,
+            ticktext=xaxis.tick_text,
+            range=x_range,
+            autorange=False,
+            fixedrange=True,
+            row=row,
+            col=1,
+        )
     fig.update_layout(bargap=0, bargroupgap=0)
+    fig.update_traces(width=1.0, selector=dict(type="bar"))
 
 
 FIB_LINE_COLORS = {
