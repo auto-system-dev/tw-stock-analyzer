@@ -10,14 +10,15 @@ from ta.trend import MACD, SMAIndicator
 from ta.volatility import BollingerBands
 
 from tw_stock_analyzer.data.fetcher import StockFetcher
+from tw_stock_analyzer.data.wantgoo_fetcher import WantGooFetcher
 
 OHLCV_COLS = ("open", "high", "low", "close", "volume")
 TW_SHARES_PER_LOT = 1000
 
 
 def chart_volume_lots(volume: pd.Series) -> pd.Series:
-    """台股圖表成交量：Yahoo 為股數，轉為張（1 張 = 1000 股）。"""
-    return (volume / TW_SHARES_PER_LOT).round().astype("int64")
+    """台股圖表成交量：內部為股數，轉為張（1 張 = 1000 股，無條件捨去）。"""
+    return (volume // TW_SHARES_PER_LOT).astype("int64")
 
 # 台股單日盤中約 270 分鐘（09:00–13:30）
 MINUTES_PER_SESSION = 270
@@ -199,30 +200,13 @@ def compute_chart_indicators(df: pd.DataFrame, spec: ChartTimeframeSpec) -> pd.D
     return result
 
 
-def fetch_intraday_chart_data(symbol: str, timeframe: str) -> pd.DataFrame:
-    """向 Yahoo Finance 擷取分 K 資料並計算圖表指標。"""
-    spec = TIMEFRAME_SPECS[timeframe]
-    if not spec.is_intraday or not spec.yf_interval or not spec.yf_period:
-        raise ValueError(f"{timeframe} 非分 K 週期")
-
-    raw = StockFetcher().fetch(
-        symbol,
-        period=spec.yf_period,
-        interval=spec.yf_interval,
-    )
-    if raw.empty:
-        raise ValueError(f"無法取得 {timeframe} 資料，Yahoo 可能暫不提供此週期。")
-    # #region agent log
-    import json, time
-    from pathlib import Path
-
-    _spec = spec
-    _sample = []
-    for _idx, _row in raw.tail(8).iterrows():
-        _sample.append(
+def _volume_audit_sample(df: pd.DataFrame, spec: ChartTimeframeSpec) -> list[dict]:
+    sample: list[dict] = []
+    for _idx, _row in df.tail(8).iterrows():
+        sample.append(
             {
                 "bar_start": str(_idx),
-                "bar_end_label": format_chart_index(_idx, _spec),
+                "bar_end_label": format_chart_index(_idx, spec),
                 "open": float(_row["open"]),
                 "high": float(_row["high"]),
                 "low": float(_row["low"]),
@@ -231,20 +215,49 @@ def fetch_intraday_chart_data(symbol: str, timeframe: str) -> pd.DataFrame:
                 "volume_lots": int(chart_volume_lots(pd.Series([_row["volume"]])).iloc[0]),
             }
         )
+    return sample
+
+
+def fetch_intraday_chart_data(symbol: str, timeframe: str) -> pd.DataFrame:
+    """擷取分 K 資料：優先玩股網（與技術分析圖同源），備援 Yahoo 1 分 K 重採樣。"""
+    spec = TIMEFRAME_SPECS[timeframe]
+    if not spec.is_intraday or not spec.yf_interval or not spec.yf_period:
+        raise ValueError(f"{timeframe} 非分 K 週期")
+
+    source = "wantgoo"
+    raw: pd.DataFrame | None = None
+    try:
+        raw = WantGooFetcher().fetch_candlesticks(symbol, timeframe)
+    except Exception:
+        source = "yfinance"
+        raw = StockFetcher().fetch(
+            symbol,
+            period=spec.yf_period,
+            interval=spec.yf_interval,
+        )
+        if raw.empty:
+            raise ValueError(f"無法取得 {timeframe} 資料，Yahoo 可能暫不提供此週期。")
+
+    # #region agent log
+    import json
+    import time
+    from pathlib import Path
+
     _log = Path(__file__).resolve().parents[2] / "debug-938789.log"
     with _log.open("a", encoding="utf-8") as _f:
         _f.write(
             json.dumps(
                 {
                     "sessionId": "938789",
-                    "hypothesisId": "A,B,C",
+                    "hypothesisId": "F,G",
                     "location": "chart_timeframe.py:fetch_intraday_chart_data",
-                    "message": "raw intraday volume from yfinance",
+                    "message": "intraday volume source audit",
                     "data": {
                         "symbol": symbol,
                         "timeframe": timeframe,
+                        "source": source,
                         "rows": len(raw),
-                        "sample_tail": _sample,
+                        "sample_tail": _volume_audit_sample(raw, spec),
                     },
                     "timestamp": int(time.time() * 1000),
                 }

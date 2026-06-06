@@ -496,9 +496,9 @@ def main() -> None:
         chart_spec = TIMEFRAME_SPECS[chart_timeframe]
         if chart_spec.is_intraday:
             st.caption(
-                "分 K 資料來自 Yahoo Finance API（與 yfinance 相同來源，可能有 15–20 分鐘延遲）；"
-                "時間為 K 棒結束時間，成交量以「張」顯示（1 張 = 1000 股）。"
-                " 僅供圖表參考，訊號、評分與預測仍依日線。"
+                "分 K 優先採用玩股網 K 線（一般交易成交量，單位：張）；"
+                "若無法連線則改以 Yahoo 1 分 K 重採樣。"
+                " 時間為 K 棒結束時間。僅供圖表參考，訊號、評分與預測仍依日線。"
             )
         else:
             st.caption(
