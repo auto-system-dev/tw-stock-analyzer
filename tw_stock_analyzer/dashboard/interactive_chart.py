@@ -11,7 +11,12 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from tw_stock_analyzer.dashboard.charts import build_combined_chart
-from tw_stock_analyzer.indicators.chart_timeframe import ChartTimeframeSpec, TIMEFRAME_SPECS, hover_key, format_chart_index
+from tw_stock_analyzer.indicators.chart_timeframe import (
+    ChartTimeframeSpec,
+    TIMEFRAME_SPECS,
+    chart_hover_key,
+    format_chart_index,
+)
 from tw_stock_analyzer.indicators.fibonacci import FibonacciRetracement
 
 
@@ -29,8 +34,8 @@ def build_hover_data(
     data_map: dict[str, dict[str, Any]] = {}
     prev_close: float | None = None
 
-    for idx, row in df.iterrows():
-        key = hover_key(idx)
+    for bar_index, (idx, row) in enumerate(df.iterrows()):
+        key = chart_hover_key(bar_index, idx, spec)
         display_date = format_chart_index(idx, spec)
         close = float(row["close"])
         change = close - prev_close if prev_close is not None else 0.0

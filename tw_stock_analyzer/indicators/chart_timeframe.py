@@ -231,3 +231,10 @@ def format_chart_index(ts: pd.Timestamp, spec: ChartTimeframeSpec) -> str:
 def hover_key(ts: pd.Timestamp) -> str:
     """產生 hover 對應鍵（毫秒時間戳，與 Plotly x 軸對齊）。"""
     return str(int(pd.Timestamp(ts).value // 1_000_000))
+
+
+def chart_hover_key(bar_index: int, ts: pd.Timestamp, spec: ChartTimeframeSpec) -> str:
+    """產生與 Plotly x 軸對齊的 hover 鍵（日線用序數索引，其餘用時間戳）。"""
+    if spec.label == "日線":
+        return str(bar_index)
+    return hover_key(ts)

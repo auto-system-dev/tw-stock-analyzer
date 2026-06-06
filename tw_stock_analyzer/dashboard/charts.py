@@ -2,12 +2,56 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from tw_stock_analyzer.indicators.fibonacci import FibonacciRetracement
-from tw_stock_analyzer.indicators.chart_timeframe import ChartTimeframeSpec, TIMEFRAME_SPECS
+from tw_stock_analyzer.indicators.chart_timeframe import (
+    ChartTimeframeSpec,
+    TIMEFRAME_SPECS,
+    format_chart_index,
+)
+
+@dataclass(frozen=True)
+class ChartXAxis:
+    coords: list
+    is_ordinal: bool
+    tick_vals: list[int] | None = None
+    tick_text: list[str] | None = None
+
+
+def _build_chart_xaxis(df: pd.DataFrame, chart_spec: ChartTimeframeSpec) -> ChartXAxis:
+    """日線改用序數 X 軸，避免週末與國定假日在時間軸上產生視覺空洞。"""
+    if chart_spec.label != "日線":
+        return ChartXAxis(coords=df.index.tolist(), is_ordinal=False)
+    n = len(df)
+    step = max(1, n // 6)
+    tick_idxs = list(range(0, n, step))
+    if tick_idxs[-1] != n - 1:
+        tick_idxs.append(n - 1)
+    tick_text = [format_chart_index(df.index[i], chart_spec) for i in tick_idxs]
+    return ChartXAxis(
+        coords=list(range(n)),
+        is_ordinal=True,
+        tick_vals=tick_idxs,
+        tick_text=tick_text,
+    )
+
+
+def _apply_ordinal_ticks(fig: go.Figure, xaxis: ChartXAxis, *, bottom_row: int) -> None:
+    if not xaxis.is_ordinal or not xaxis.tick_vals:
+        return
+    fig.update_xaxes(
+        tickmode="array",
+        tickvals=xaxis.tick_vals,
+        ticktext=xaxis.tick_text,
+        row=bottom_row,
+        col=1,
+    )
+
 
 FIB_LINE_COLORS = {
     "0%": "#94a3b8",
@@ -22,13 +66,14 @@ def _add_fibonacci_levels(
     fig: go.Figure,
     df: pd.DataFrame,
     fib: FibonacciRetracement,
+    x_coords: list,
     *,
     row: int = 1,
     col: int = 1,
     hover_info: str | None = "skip",
 ) -> None:
     """繪製 Fib 水平線；標籤放圖表右側，不佔用頂部圖例。"""
-    x_start, x_end = df.index[0], df.index[-1]
+    x_start, x_end = x_coords[0], x_coords[-1]
     for level in fib.levels:
         color = FIB_LINE_COLORS.get(level.label, "#eab308")
         width = 1.8 if level.label in {"38.2%", "50%", "61.8%"} else 1.0
@@ -63,13 +108,19 @@ def _add_fibonacci_levels(
         )
 
 
-def _add_fibonacci_lines(fig: go.Figure, df: pd.DataFrame, fib: FibonacciRetracement) -> None:
-    _add_fibonacci_levels(fig, df, fib, hover_info="hover")
+def _add_fibonacci_lines(
+    fig: go.Figure,
+    df: pd.DataFrame,
+    fib: FibonacciRetracement,
+    x_coords: list,
+) -> None:
+    _add_fibonacci_levels(fig, df, fib, x_coords, hover_info="hover")
 
 
 def _add_hover_capture(
     fig: go.Figure,
     df: pd.DataFrame,
+    x_coords: list,
     row: int,
     y_col: str,
 ) -> None:
@@ -78,7 +129,7 @@ def _add_hover_capture(
         return
     fig.add_trace(
         go.Scatter(
-            x=df.index,
+            x=x_coords,
             y=df[y_col],
             mode="markers",
             marker=dict(size=14, color="rgba(0,0,0,0)"),
@@ -89,18 +140,6 @@ def _add_hover_capture(
         row=row,
         col=1,
     )
-
-
-def _apply_trading_rangebreaks(fig: go.Figure, chart_spec: ChartTimeframeSpec, *, n_rows: int = 4) -> None:
-    """日線隱藏週末空白，讓 K 棒連續排列（僅影響視覺，不刪除資料）。"""
-    if chart_spec.label != "日線":
-        return
-    for row in range(1, n_rows + 1):
-        fig.update_xaxes(
-            rangebreaks=[dict(bounds=["sat", "mon"])],
-            row=row,
-            col=1,
-        )
 
 
 def _apply_crosshair(fig: go.Figure, *, n_rows: int = 4) -> None:
@@ -119,6 +158,7 @@ def _add_price_traces(
     fig: go.Figure,
     df: pd.DataFrame,
     chart_spec: ChartTimeframeSpec,
+    x_coords: list,
     *,
     row: int = 1,
     col: int = 1,
@@ -127,7 +167,7 @@ def _add_price_traces(
     hover = "skip" if skip_hover else None
     fig.add_trace(
         go.Candlestick(
-            x=df.index,
+            x=x_coords,
             open=df["open"],
             high=df["high"],
             low=df["low"],
@@ -154,13 +194,14 @@ def _add_price_traces(
         is_bb = col_name.startswith("bb_")
         fig.add_trace(
             go.Scatter(
-                x=df.index,
+                x=x_coords,
                 y=df[col_name],
                 name=label,
                 line=dict(color=color, width=1.2, dash=dash_styles.get(col_name, "solid")),
                 opacity=0.85 if is_bb else 1,
                 showlegend=not is_bb,
                 hoverinfo=hover,
+                connectgaps=False,
             ),
             row=row,
             col=col,
@@ -177,6 +218,8 @@ def build_combined_chart(
 ) -> go.Figure:
     """K 線 + 成交量 + RSI + MACD 合併圖（含十字游標）。"""
     chart_spec = spec or TIMEFRAME_SPECS["日線"]
+    xaxis = _build_chart_xaxis(df, chart_spec)
+    x_coords = xaxis.coords
     fig = make_subplots(
         rows=4,
         cols=1,
@@ -186,17 +229,17 @@ def build_combined_chart(
         subplot_titles=(None, None, "RSI (14)", "MACD"),
     )
 
-    _add_price_traces(fig, df, chart_spec, row=1, skip_hover=True)
+    _add_price_traces(fig, df, chart_spec, x_coords, row=1, skip_hover=True)
 
     if fib is not None:
-        _add_fibonacci_levels(fig, df, fib, row=1, col=1)
+        _add_fibonacci_levels(fig, df, fib, x_coords, row=1, col=1)
 
     vol_colors = [
         "#ef4444" if c >= o else "#22c55e" for c, o in zip(df["close"], df["open"])
     ]
     fig.add_trace(
         go.Bar(
-            x=df.index,
+            x=x_coords,
             y=df["volume"],
             name="成交量",
             marker_color=vol_colors,
@@ -209,12 +252,13 @@ def build_combined_chart(
 
     fig.add_trace(
         go.Scatter(
-            x=df.index,
+            x=x_coords,
             y=df["rsi_14"],
             name="RSI",
             line=dict(color="#38bdf8"),
             hoverinfo="skip",
             showlegend=False,
+            connectgaps=False,
         ),
         row=3,
         col=1,
@@ -224,7 +268,7 @@ def build_combined_chart(
 
     fig.add_trace(
         go.Bar(
-            x=df.index,
+            x=x_coords,
             y=df["macd_hist"],
             name="MACD 柱",
             marker_color=["#22c55e" if v >= 0 else "#ef4444" for v in df["macd_hist"]],
@@ -236,24 +280,26 @@ def build_combined_chart(
     )
     fig.add_trace(
         go.Scatter(
-            x=df.index,
+            x=x_coords,
             y=df["macd"],
             name="MACD",
             line=dict(color="#3b82f6", width=1.5),
             hoverinfo="skip",
             showlegend=False,
+            connectgaps=False,
         ),
         row=4,
         col=1,
     )
     fig.add_trace(
         go.Scatter(
-            x=df.index,
+            x=x_coords,
             y=df["macd_signal"],
             name="Signal",
             line=dict(color="#f59e0b", width=1.2),
             hoverinfo="skip",
             showlegend=False,
+            connectgaps=False,
         ),
         row=4,
         col=1,
@@ -286,11 +332,11 @@ def build_combined_chart(
     fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)")
     for r in (1, 2, 3):
         fig.update_xaxes(showticklabels=False, row=r, col=1)
-    _add_hover_capture(fig, df, 1, "close")
-    _add_hover_capture(fig, df, 2, "volume")
-    _add_hover_capture(fig, df, 3, "rsi_14")
-    _add_hover_capture(fig, df, 4, "macd")
-    _apply_trading_rangebreaks(fig, chart_spec)
+    _add_hover_capture(fig, df, x_coords, 1, "close")
+    _add_hover_capture(fig, df, x_coords, 2, "volume")
+    _add_hover_capture(fig, df, x_coords, 3, "rsi_14")
+    _add_hover_capture(fig, df, x_coords, 4, "macd")
+    _apply_ordinal_ticks(fig, xaxis, bottom_row=4)
     _apply_crosshair(fig)
     return fig
 
@@ -305,12 +351,14 @@ def build_price_chart(
 ) -> go.Figure:
     """K 線 + 均線 + 布林通道，可選斐波那契回撤。"""
     chart_spec = spec or TIMEFRAME_SPECS["日線"]
+    xaxis = _build_chart_xaxis(df, chart_spec)
+    x_coords = xaxis.coords
     fig = make_subplots(rows=1, cols=1, shared_xaxes=True)
 
-    _add_price_traces(fig, df, chart_spec)
+    _add_price_traces(fig, df, chart_spec, x_coords)
 
     if fib is not None:
-        _add_fibonacci_lines(fig, df, fib)
+        _add_fibonacci_lines(fig, df, fib, x_coords)
 
     title = f"{title}（{chart_spec.label}）"
     fig.update_layout(
@@ -325,6 +373,7 @@ def build_price_chart(
     )
     fig.update_xaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)")
     fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)", title="價格")
+    _apply_ordinal_ticks(fig, xaxis, bottom_row=1)
     return fig
 
 
