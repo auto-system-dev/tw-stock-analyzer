@@ -227,6 +227,7 @@ def fetch_intraday_chart_data(symbol: str, timeframe: str) -> pd.DataFrame:
 
     source = "finmind"
     raw: pd.DataFrame | None = None
+    source_errors: dict[str, str] = {}
     for candidate, fetcher in (
         ("finmind", lambda: FinMindIntradayFetcher().fetch_candlesticks(symbol, timeframe)),
         ("wantgoo", lambda: WantGooFetcher().fetch_candlesticks(symbol, timeframe)),
@@ -235,7 +236,8 @@ def fetch_intraday_chart_data(symbol: str, timeframe: str) -> pd.DataFrame:
             raw = fetcher()
             source = candidate
             break
-        except Exception:
+        except Exception as exc:
+            source_errors[candidate] = str(exc)
             continue
 
     if raw is None:
@@ -266,6 +268,7 @@ def fetch_intraday_chart_data(symbol: str, timeframe: str) -> pd.DataFrame:
                         "symbol": symbol,
                         "timeframe": timeframe,
                         "source": source,
+                        "source_errors": source_errors,
                         "rows": len(raw),
                         "sample_tail": _volume_audit_sample(raw, spec),
                     },
@@ -275,7 +278,9 @@ def fetch_intraday_chart_data(symbol: str, timeframe: str) -> pd.DataFrame:
             + "\n"
         )
     # #endregion
-    return compute_chart_indicators(raw, spec)
+    result = compute_chart_indicators(raw, spec)
+    result.attrs["source"] = source
+    return result
 
 
 def prepare_chart_data(daily_df: pd.DataFrame, timeframe: str) -> pd.DataFrame:

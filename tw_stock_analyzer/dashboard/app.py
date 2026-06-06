@@ -57,6 +57,12 @@ DIRECTION_STYLE = {
     "中性": ("off", "→"),
 }
 
+INTRADAY_SOURCE_LABELS = {
+    "finmind": "FinMind KBar",
+    "wantgoo": "玩股網",
+    "yfinance": "Yahoo Finance（備援）",
+}
+
 
 st.set_page_config(
     page_title="台股分析儀表板",
@@ -494,13 +500,7 @@ def main() -> None:
             key=f"chart_display_range_{chart_timeframe}",
         )
         chart_spec = TIMEFRAME_SPECS[chart_timeframe]
-        if chart_spec.is_intraday:
-            st.caption(
-                "分 K 優先 FinMind KBar（需 Sponsor Token），其次玩股網，最後 Yahoo 重採樣；"
-                "成交量單位：張。"
-                " 時間為 K 棒結束時間。僅供圖表參考，訊號、評分與預測仍依日線。"
-            )
-        else:
+        if not chart_spec.is_intraday:
             st.caption(
                 "圖表會依顯示範圍擷取日線並重採樣；均線等指標在該區間資料上計算。"
                 " 訊號、評分與預測仍依側欄日線分析。"
@@ -518,6 +518,18 @@ def main() -> None:
             chart_df = report.ohlcv
             chart_timeframe = "日線"
             chart_spec = TIMEFRAME_SPECS["日線"]
+
+        if chart_spec.is_intraday:
+            src = chart_df.attrs.get("source", "unknown")
+            src_label = INTRADAY_SOURCE_LABELS.get(src, src)
+            warn = ""
+            if src == "yfinance":
+                warn = " Yahoo 成交量含較多交易類型，與玩股網（一般交易）常有差異。"
+            st.caption(
+                f"目前資料來源：**{src_label}** · 成交量單位：張 · "
+                f"時間為 K 棒結束時間。{warn}"
+                "僅供圖表參考，訊號、評分與預測仍依日線。"
+            )
 
         display_df = slice_chart_display_range(chart_df, chart_range)
         # #region agent log

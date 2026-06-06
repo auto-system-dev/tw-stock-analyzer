@@ -86,16 +86,20 @@ class WantGooFetcher:
         return data
 
     def _historical_before_candidates(self, candlestick_type: str) -> list[int]:
-        """玩股網 before 參數容錯：部分時段僅特定偏移可通過。"""
+        """玩股網 before 偏移（對齊 JS：-3h startOf hour，少量備援避免觸發 WAF）。"""
         now = pd.Timestamp.now(tz="Asia/Taipei")
         if candlestick_type == "minute":
-            anchors = [now.floor("min") - pd.Timedelta(minutes=m) for m in range(15, 45, 5)]
+            offsets = [15, 20, 25]
+            anchors = [now.floor("min") - pd.Timedelta(minutes=m) for m in offsets]
         elif candlestick_type in {"five-minutes", "quarter-hour"}:
-            anchors = [now.floor("h") - pd.Timedelta(hours=h) for h in range(2, 26)]
+            offsets = [2, 3, 4]
+            anchors = [now.floor("h") - pd.Timedelta(hours=h) for h in offsets]
         elif candlestick_type in {"half-hour", "hour"}:
-            anchors = [now.floor("h") - pd.Timedelta(hours=h) for h in range(3, 31)]
+            offsets = [3, 4, 5, 6]
+            anchors = [now.floor("h") - pd.Timedelta(hours=h) for h in offsets]
         else:
-            anchors = [now.floor("D") - pd.Timedelta(days=d) for d in range(5, 12)]
+            offsets = [5, 6, 7]
+            anchors = [now.floor("D") - pd.Timedelta(days=d) for d in offsets]
         return [int(a.value // 1_000_000) for a in anchors]
 
     def fetch_candlesticks(self, symbol: str, timeframe: str) -> pd.DataFrame:
