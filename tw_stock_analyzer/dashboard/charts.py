@@ -16,6 +16,10 @@ from tw_stock_analyzer.indicators.chart_timeframe import (
     uses_ordinal_x_axis,
 )
 
+ORDINAL_VOL_BAR_WIDTH = 0.72
+ORDINAL_MACD_BAR_WIDTH = 0.85
+
+
 @dataclass(frozen=True)
 class ChartXAxis:
     coords: list
@@ -47,20 +51,24 @@ def _apply_ordinal_axis(fig: go.Figure, xaxis: ChartXAxis, *, n_rows: int = 4) -
         return
     n = len(xaxis.coords)
     x_range = [-0.5, n - 0.5]
-    for row in range(1, n_rows + 1):
-        fig.update_xaxes(
-            type="linear",
-            tickmode="array",
-            tickvals=xaxis.tick_vals,
-            ticktext=xaxis.tick_text,
-            range=x_range,
-            autorange=False,
-            fixedrange=True,
-            row=row,
-            col=1,
-        )
-    fig.update_layout(bargap=0, bargroupgap=0)
-    fig.update_traces(width=1.0, selector=dict(type="bar"))
+    axis_style = dict(
+        type="linear",
+        tickmode="array",
+        tickvals=xaxis.tick_vals,
+        ticktext=xaxis.tick_text,
+        range=x_range,
+        autorange=False,
+        fixedrange=True,
+        constrain="domain",
+    )
+    axis_names = ("xaxis", "xaxis2", "xaxis3", "xaxis4")
+    layout_patch = {"bargap": 0, "bargroupgap": 0}
+    for i in range(n_rows):
+        style = axis_style.copy()
+        if i < n_rows - 1:
+            style["showticklabels"] = False
+        layout_patch[axis_names[i]] = style
+    fig.update_layout(**layout_patch)
 
 
 FIB_LINE_COLORS = {
@@ -233,7 +241,7 @@ def build_combined_chart(
     fig = make_subplots(
         rows=4,
         cols=1,
-        shared_xaxes=True,
+        shared_xaxes=False,
         row_heights=[0.48, 0.14, 0.19, 0.19],
         vertical_spacing=0.03,
         subplot_titles=(None, None, "RSI (14)", "MACD"),
@@ -247,11 +255,13 @@ def build_combined_chart(
     vol_colors = [
         "#ef4444" if c >= o else "#22c55e" for c, o in zip(df["close"], df["open"])
     ]
+    vol_bar_width = ORDINAL_VOL_BAR_WIDTH if xaxis.is_ordinal else None
     fig.add_trace(
         go.Bar(
             x=x_coords,
             y=df["volume"],
             name="成交量",
+            width=vol_bar_width,
             marker=dict(color=vol_colors, line=dict(width=0)),
             hoverinfo="skip",
             showlegend=False,
@@ -276,11 +286,13 @@ def build_combined_chart(
     fig.add_hline(y=70, line_dash="dot", line_color="#ef4444", opacity=0.5, row=3, col=1)
     fig.add_hline(y=30, line_dash="dot", line_color="#22c55e", opacity=0.5, row=3, col=1)
 
+    macd_bar_width = ORDINAL_MACD_BAR_WIDTH if xaxis.is_ordinal else None
     fig.add_trace(
         go.Bar(
             x=x_coords,
             y=df["macd_hist"],
             name="MACD 柱",
+            width=macd_bar_width,
             marker_color=["#22c55e" if v >= 0 else "#ef4444" for v in df["macd_hist"]],
             hoverinfo="skip",
             showlegend=False,
