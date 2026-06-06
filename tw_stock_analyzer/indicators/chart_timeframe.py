@@ -12,6 +12,12 @@ from ta.volatility import BollingerBands
 from tw_stock_analyzer.data.fetcher import StockFetcher
 
 OHLCV_COLS = ("open", "high", "low", "close", "volume")
+TW_SHARES_PER_LOT = 1000
+
+
+def chart_volume_lots(volume: pd.Series) -> pd.Series:
+    """台股圖表成交量：Yahoo 為股數，轉為張（1 張 = 1000 股）。"""
+    return volume / TW_SHARES_PER_LOT
 
 # 台股單日盤中約 270 分鐘（09:00–13:30）
 MINUTES_PER_SESSION = 270

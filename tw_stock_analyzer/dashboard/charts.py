@@ -12,6 +12,7 @@ from tw_stock_analyzer.indicators.fibonacci import FibonacciRetracement
 from tw_stock_analyzer.indicators.chart_timeframe import (
     ChartTimeframeSpec,
     TIMEFRAME_SPECS,
+    chart_volume_lots,
     format_chart_index,
     uses_ordinal_x_axis,
 )
@@ -255,11 +256,12 @@ def build_combined_chart(
     vol_colors = [
         "#ef4444" if c >= o else "#22c55e" for c, o in zip(df["close"], df["open"])
     ]
+    vol_lots = chart_volume_lots(df["volume"])
     vol_bar_width = ORDINAL_VOL_BAR_WIDTH if xaxis.is_ordinal else None
     fig.add_trace(
         go.Bar(
             x=x_coords,
-            y=df["volume"],
+            y=vol_lots,
             name="成交量",
             width=vol_bar_width,
             marker=dict(color=vol_colors, line=dict(width=0)),
@@ -347,7 +349,7 @@ def build_combined_chart(
         plot_bgcolor="rgba(0,0,0,0)",
     )
     fig.update_yaxes(title_text="價格", row=1, col=1)
-    fig.update_yaxes(title_text="量", row=2, col=1)
+    fig.update_yaxes(title_text="量（張）", row=2, col=1)
     fig.update_yaxes(title_text="RSI", row=3, col=1, range=[0, 100])
     fig.update_yaxes(title_text="MACD", row=4, col=1)
     fig.update_xaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)")
@@ -355,7 +357,8 @@ def build_combined_chart(
     for r in (1, 2, 3):
         fig.update_xaxes(showticklabels=False, row=r, col=1)
     _add_hover_capture(fig, df, x_coords, 1, "close")
-    _add_hover_capture(fig, df, x_coords, 2, "volume")
+    plot_df = df.assign(_volume_lots=vol_lots)
+    _add_hover_capture(fig, plot_df, x_coords, 2, "_volume_lots")
     _add_hover_capture(fig, df, x_coords, 3, "rsi_14")
     _add_hover_capture(fig, df, x_coords, 4, "macd")
     _apply_ordinal_axis(fig, xaxis)
@@ -470,7 +473,7 @@ def build_volume_chart(df: pd.DataFrame) -> go.Figure:
         for c, o in zip(df["close"], df["open"])
     ]
     fig = go.Figure(
-        go.Bar(x=df.index, y=df["volume"], marker_color=colors, name="成交量")
+        go.Bar(x=df.index, y=chart_volume_lots(df["volume"]), marker_color=colors, name="成交量")
     )
     fig.update_layout(
         title="成交量",

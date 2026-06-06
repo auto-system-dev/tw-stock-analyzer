@@ -46,7 +46,7 @@ def build_hover_data(
             "open": float(row["open"]),
             "high": float(row["high"]),
             "low": float(row["low"]),
-            "volume": float(row["volume"]),
+            "volume": float(row["volume"]) / 1000,
             "change": change,
             "change_pct": change_pct,
             "rsi": _num(row.get("rsi_14")),
@@ -169,7 +169,7 @@ function renderBar(d) {{
     <span class="sep">|</span>
     <span><span class="label">低</span>${{fmt(d.low)}}</span>
     <span class="sep">|</span>
-    <span><span class="label">量</span>${{fmtVol(d.volume)}}</span>
+    <span><span class="label">量</span>${{fmtVol(d.volume)}} 張</span>
     <span class="sep">|</span>
     <span><span class="label">RSI</span>${{fmt(d.rsi, 1)}}</span>
     <span class="sep">|</span>

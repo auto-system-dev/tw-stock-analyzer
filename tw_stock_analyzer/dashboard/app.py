@@ -497,7 +497,8 @@ def main() -> None:
         if chart_spec.is_intraday:
             st.caption(
                 "分 K 資料來自 Yahoo Finance（可能有 15–20 分鐘延遲）；"
-                "僅供圖表參考，訊號、評分、掃描與預測仍依日線。"
+                "成交量以「張」顯示（1 張 = 1000 股），與玩股網可能因資料來源與 K 棒切分略有差異。"
+                " 僅供圖表參考，訊號、評分與預測仍依日線。"
             )
         else:
             st.caption(
