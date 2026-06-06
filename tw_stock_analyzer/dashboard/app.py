@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import os
+
 import pandas as pd
 import streamlit as st
 
@@ -30,11 +33,19 @@ from tw_stock_analyzer.indicators.chart_timeframe import (
 from tw_stock_analyzer.indicators.fibonacci import compute_fibonacci_retracement
 
 # 分析報告結構版本；變更時清除舊 session 快取
-REPORT_CACHE_VERSION = 12
+REPORT_CACHE_VERSION = 13
+
+
+def _intraday_data_cache_key() -> str:
+    """Token 變更時使分 K 快取失效（避免仍顯示 Yahoo 備援）。"""
+    token = os.getenv("FINMIND_API_TOKEN", "").strip()
+    if not token:
+        return "no-finmind"
+    return hashlib.sha256(token.encode()).hexdigest()[:12]
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def _load_intraday_chart(symbol: str, timeframe: str) -> pd.DataFrame:
+def _load_intraday_chart(symbol: str, timeframe: str, _data_key: str) -> pd.DataFrame:
     return fetch_intraday_chart_data(symbol, timeframe)
 
 
@@ -508,7 +519,9 @@ def main() -> None:
 
         try:
             if chart_spec.is_intraday:
-                chart_df = _load_intraday_chart(report.symbol, chart_timeframe)
+                chart_df = _load_intraday_chart(
+                    report.symbol, chart_timeframe, _intraday_data_cache_key()
+                )
             else:
                 chart_period = fetch_period_for_display_range(chart_range)
                 daily_df = _load_chart_daily(report.symbol, chart_period)
