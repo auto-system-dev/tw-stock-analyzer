@@ -29,7 +29,7 @@ from tw_stock_analyzer.indicators.chart_timeframe import (
 from tw_stock_analyzer.indicators.fibonacci import compute_fibonacci_retracement
 
 # 分析報告結構版本；變更時清除舊 session 快取
-REPORT_CACHE_VERSION = 14
+REPORT_CACHE_VERSION = 16
 
 
 @st.cache_data(ttl=300, show_spinner=False)
