@@ -40,7 +40,7 @@ def build_hover_data(
         close = float(row["close"])
         change = close - prev_close if prev_close is not None else 0.0
         change_pct = (change / prev_close * 100) if prev_close else 0.0
-        data_map[key] = {
+        entry = {
             "date": display_date,
             "close": close,
             "open": float(row["open"]),
@@ -58,6 +58,9 @@ def build_hover_data(
             "sma_fast_label": spec.sma_fast,
             "sma_slow_label": spec.sma_slow,
         }
+        data_map[key] = entry
+        if key != str(bar_index):
+            data_map[str(bar_index)] = entry
         prev_close = close
 
     default_key = next(reversed(data_map))

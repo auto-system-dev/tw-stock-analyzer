@@ -246,7 +246,7 @@ def uses_ordinal_x_axis(spec: ChartTimeframeSpec) -> bool:
 
 
 def chart_hover_key(bar_index: int, ts: pd.Timestamp, spec: ChartTimeframeSpec) -> str:
-    """產生與 Plotly x 軸對齊的 hover 鍵（序數軸用整數索引）。"""
+    """產生與 Plotly 類別 X 軸對齊的 hover 鍵。"""
     if uses_ordinal_x_axis(spec):
-        return str(bar_index)
+        return format_chart_index(ts, spec)
     return hover_key(ts)
