@@ -519,6 +519,15 @@ def main() -> None:
             chart_spec = TIMEFRAME_SPECS["日線"]
 
         display_df = slice_chart_display_range(chart_df, chart_range)
+        # #region agent log
+        import json, time
+        from pathlib import Path
+        _idx = pd.to_datetime(display_df.index).sort_values()
+        _gaps = [int((_idx[i] - _idx[i - 1]).days) for i in range(1, len(_idx)) if (_idx[i] - _idx[i - 1]).days > 4]
+        _log = Path(__file__).resolve().parents[2] / "debug-938789.log"
+        with _log.open("a", encoding="utf-8") as _f:
+            _f.write(json.dumps({"sessionId": "938789", "hypothesisId": "C,D", "location": "app.py:tab_chart", "message": "daily bar gap check", "data": {"chart_timeframe": chart_timeframe, "chart_range": chart_range, "display_rows": len(display_df), "display_start": str(_idx.min()) if len(_idx) else None, "display_end": str(_idx.max()) if len(_idx) else None, "gaps_over_4d": _gaps, "gap_count_over_4d": len(_gaps)}, "timestamp": int(time.time() * 1000)}) + "\n")
+        # #endregion
 
         fib_bars = fib_lookback_bars(chart_timeframe, fib_lookback)
         fib = (

@@ -91,6 +91,18 @@ def _add_hover_capture(
     )
 
 
+def _apply_trading_rangebreaks(fig: go.Figure, chart_spec: ChartTimeframeSpec, *, n_rows: int = 4) -> None:
+    """日線隱藏週末空白，讓 K 棒連續排列（僅影響視覺，不刪除資料）。"""
+    if chart_spec.label != "日線":
+        return
+    for row in range(1, n_rows + 1):
+        fig.update_xaxes(
+            rangebreaks=[dict(bounds=["sat", "mon"])],
+            row=row,
+            col=1,
+        )
+
+
 def _apply_crosshair(fig: go.Figure, *, n_rows: int = 4) -> None:
     """設定 hover 行為；十字虛線由 JS 繪製，hover 白框由 CSS 隱藏。"""
     fig.update_layout(
@@ -278,6 +290,7 @@ def build_combined_chart(
     _add_hover_capture(fig, df, 2, "volume")
     _add_hover_capture(fig, df, 3, "rsi_14")
     _add_hover_capture(fig, df, 4, "macd")
+    _apply_trading_rangebreaks(fig, chart_spec)
     _apply_crosshair(fig)
     return fig
 
