@@ -30,7 +30,7 @@ class ChartXAxis:
 
 
 def _build_chart_xaxis(df: pd.DataFrame, chart_spec: ChartTimeframeSpec) -> ChartXAxis:
-    """日/週/月線與分 K 用整數序數 X 軸，消除盤後與假日造成的視覺空洞。"""
+    """日/週/月線用整數序數 X 軸，消除盤後與假日造成的視覺空洞。"""
     if not uses_ordinal_x_axis(chart_spec):
         return ChartXAxis(coords=df.index.tolist(), is_ordinal=False)
     n = len(df)
@@ -66,8 +66,7 @@ def _apply_ordinal_axis(fig: go.Figure, xaxis: ChartXAxis, *, n_rows: int = 4) -
     layout_patch = {"bargap": 0, "bargroupgap": 0}
     for i in range(n_rows):
         style = axis_style.copy()
-        if i < n_rows - 1:
-            style["showticklabels"] = False
+        style["showticklabels"] = False
         layout_patch[axis_names[i]] = style
     fig.update_layout(**layout_patch)
 
@@ -354,7 +353,7 @@ def build_combined_chart(
     fig.update_yaxes(title_text="MACD", row=4, col=1)
     fig.update_xaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)")
     fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)")
-    for r in (1, 2, 3):
+    for r in (1, 2, 3, 4):
         fig.update_xaxes(showticklabels=False, row=r, col=1)
     _add_hover_capture(fig, df, x_coords, 1, "close")
     plot_df = df.assign(_volume_lots=vol_lots)

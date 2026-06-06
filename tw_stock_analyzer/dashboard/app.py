@@ -145,7 +145,7 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, int]:
             run_screen_btn = st.button("開始掃描", type="primary", width="stretch")
             screen_opts["run"] = run_screen_btn
             st.divider()
-            st.caption("日線：TWSE · 分K：FinMind/玩股網/Yahoo · 籌碼/營收：FinMind · 僅供研究參考")
+            st.caption("日線：TWSE · 籌碼/營收：FinMind · 僅供研究參考")
             return "", "", page, 5, False, False, screen_opts, False, 60
 
         st.markdown("**常用標的**")
@@ -174,7 +174,7 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, int]:
         run_bt = st.button("執行回測", width="stretch")
 
         st.divider()
-        st.caption("日線：TWSE · 分K：FinMind/玩股網/Yahoo · 籌碼/營收：FinMind · 僅供研究參考")
+        st.caption("日線：TWSE · 籌碼/營收：FinMind · 僅供研究參考")
 
     period = PERIOD_OPTIONS[period_label]
     return symbol.strip(), period, page, horizon_days, analyze, run_bt, screen_opts, show_fibonacci, fib_lookback
