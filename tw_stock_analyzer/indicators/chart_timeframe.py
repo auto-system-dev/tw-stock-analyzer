@@ -10,6 +10,7 @@ from ta.trend import MACD, SMAIndicator
 from ta.volatility import BollingerBands
 
 from tw_stock_analyzer.data.fetcher import StockFetcher
+from tw_stock_analyzer.data.finmind_intraday_fetcher import FinMindIntradayFetcher
 from tw_stock_analyzer.data.wantgoo_fetcher import WantGooFetcher
 
 OHLCV_COLS = ("open", "high", "low", "close", "volume")
@@ -219,16 +220,25 @@ def _volume_audit_sample(df: pd.DataFrame, spec: ChartTimeframeSpec) -> list[dic
 
 
 def fetch_intraday_chart_data(symbol: str, timeframe: str) -> pd.DataFrame:
-    """擷取分 K 資料：優先玩股網（與技術分析圖同源），備援 Yahoo 1 分 K 重採樣。"""
+    """擷取分 K：優先 FinMind KBar，其次玩股網，最後 Yahoo 重採樣。"""
     spec = TIMEFRAME_SPECS[timeframe]
     if not spec.is_intraday or not spec.yf_interval or not spec.yf_period:
         raise ValueError(f"{timeframe} 非分 K 週期")
 
-    source = "wantgoo"
+    source = "finmind"
     raw: pd.DataFrame | None = None
-    try:
-        raw = WantGooFetcher().fetch_candlesticks(symbol, timeframe)
-    except Exception:
+    for candidate, fetcher in (
+        ("finmind", lambda: FinMindIntradayFetcher().fetch_candlesticks(symbol, timeframe)),
+        ("wantgoo", lambda: WantGooFetcher().fetch_candlesticks(symbol, timeframe)),
+    ):
+        try:
+            raw = fetcher()
+            source = candidate
+            break
+        except Exception:
+            continue
+
+    if raw is None:
         source = "yfinance"
         raw = StockFetcher().fetch(
             symbol,
@@ -236,7 +246,7 @@ def fetch_intraday_chart_data(symbol: str, timeframe: str) -> pd.DataFrame:
             interval=spec.yf_interval,
         )
         if raw.empty:
-            raise ValueError(f"無法取得 {timeframe} 資料，Yahoo 可能暫不提供此週期。")
+            raise ValueError(f"無法取得 {timeframe} 資料，請確認 FinMind Token 或資料來源。")
 
     # #region agent log
     import json

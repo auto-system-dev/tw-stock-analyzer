@@ -152,7 +152,7 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, int]:
             run_screen_btn = st.button("開始掃描", type="primary", width="stretch")
             screen_opts["run"] = run_screen_btn
             st.divider()
-            st.caption("日線：TWSE · 分K：玩股網/Yahoo · 籌碼/營收：FinMind · 僅供研究參考")
+            st.caption("日線：TWSE · 分K：FinMind/玩股網/Yahoo · 籌碼/營收：FinMind · 僅供研究參考")
             return "", "", page, 5, False, False, screen_opts, False, 60
 
         st.markdown("**常用標的**")
@@ -181,7 +181,7 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, int]:
         run_bt = st.button("執行回測", width="stretch")
 
         st.divider()
-        st.caption("日線：TWSE · 分K：玩股網/Yahoo · 籌碼/營收：FinMind · 僅供研究參考")
+        st.caption("日線：TWSE · 分K：FinMind/玩股網/Yahoo · 籌碼/營收：FinMind · 僅供研究參考")
 
     period = PERIOD_OPTIONS[period_label]
     return symbol.strip(), period, page, horizon_days, analyze, run_bt, screen_opts, show_fibonacci, fib_lookback
@@ -496,8 +496,8 @@ def main() -> None:
         chart_spec = TIMEFRAME_SPECS[chart_timeframe]
         if chart_spec.is_intraday:
             st.caption(
-                "分 K 優先採用玩股網 K 線（一般交易成交量，單位：張）；"
-                "若無法連線則改以 Yahoo 1 分 K 重採樣。"
+                "分 K 優先 FinMind KBar（需 Sponsor Token），其次玩股網，最後 Yahoo 重採樣；"
+                "成交量單位：張。"
                 " 時間為 K 棒結束時間。僅供圖表參考，訊號、評分與預測仍依日線。"
             )
         else:

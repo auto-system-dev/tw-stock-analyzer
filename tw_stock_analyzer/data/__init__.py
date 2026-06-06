@@ -1,4 +1,5 @@
 from tw_stock_analyzer.data.fetcher import StockFetcher
+from tw_stock_analyzer.data.finmind_intraday_fetcher import FinMindIntradayFetcher
 from tw_stock_analyzer.data.twse_fetcher import TwseDailyFetcher
 from tw_stock_analyzer.data.market_context import (
     MarketContextProvider,
@@ -8,6 +9,7 @@ from tw_stock_analyzer.data.models import MarketContext
 
 __all__ = [
     "StockFetcher",
+    "FinMindIntradayFetcher",
     "TwseDailyFetcher",
     "MarketContextProvider",
     "MarketContext",

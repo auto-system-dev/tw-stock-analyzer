@@ -21,6 +21,37 @@ class FinMindApiClient:
         if self._token:
             self._session.headers["Authorization"] = f"Bearer {self._token}"
 
+    @property
+    def has_token(self) -> bool:
+        return bool(self._token)
+
+    def get_data_with_status(
+        self,
+        dataset: str,
+        data_id: str,
+        start_date: str,
+        end_date: str | None = None,
+    ) -> tuple[pd.DataFrame | None, int, str | None]:
+        """回傳 (DataFrame, HTTP status, error_message)。"""
+        params = {
+            "dataset": dataset,
+            "data_id": data_id,
+            "start_date": start_date,
+            "end_date": end_date or start_date,
+        }
+        try:
+            resp = self._session.get(API_BASE, params=params, timeout=60)
+            status = resp.status_code
+            if not resp.ok:
+                return None, status, resp.text[:240]
+            body = resp.json()
+            rows = body.get("data")
+            if not rows:
+                return None, status, "empty"
+            return pd.DataFrame(rows), status, None
+        except Exception as exc:
+            return None, 0, str(exc)
+
     def get_data(
         self,
         dataset: str,
@@ -28,22 +59,8 @@ class FinMindApiClient:
         start_date: str,
         end_date: str,
     ) -> pd.DataFrame | None:
-        params = {
-            "dataset": dataset,
-            "data_id": data_id,
-            "start_date": start_date,
-            "end_date": end_date,
-        }
-        try:
-            resp = self._session.get(API_BASE, params=params, timeout=60)
-            resp.raise_for_status()
-            body = resp.json()
-            rows = body.get("data")
-            if not rows:
-                return None
-            return pd.DataFrame(rows)
-        except Exception:
-            return None
+        df, _, _ = self.get_data_with_status(dataset, data_id, start_date, end_date)
+        return df
 
     def fetch(
         self,
