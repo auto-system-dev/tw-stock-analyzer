@@ -8,5 +8,4 @@ rich>=13.7.0
 streamlit>=1.32.0
 plotly>=5.20.0
 requests>=2.31.0
-curl_cffi>=0.15.0
 

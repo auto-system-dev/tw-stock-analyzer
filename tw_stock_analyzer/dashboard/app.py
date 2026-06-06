@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import os
-
 import pandas as pd
 import streamlit as st
 
@@ -23,7 +20,6 @@ from tw_stock_analyzer.indicators.chart_timeframe import (
     CHART_TIMEFRAME_OPTIONS,
     TIMEFRAME_SPECS,
     display_range_options_for,
-    fetch_intraday_chart_data,
     fetch_period_for_display_range,
     fib_lookback_bars,
     format_chart_index,
@@ -33,20 +29,7 @@ from tw_stock_analyzer.indicators.chart_timeframe import (
 from tw_stock_analyzer.indicators.fibonacci import compute_fibonacci_retracement
 
 # 分析報告結構版本；變更時清除舊 session 快取
-REPORT_CACHE_VERSION = 13
-
-
-def _intraday_data_cache_key() -> str:
-    """Token 變更時使分 K 快取失效（避免仍顯示 Yahoo 備援）。"""
-    token = os.getenv("FINMIND_API_TOKEN", "").strip()
-    if not token:
-        return "no-finmind"
-    return hashlib.sha256(token.encode()).hexdigest()[:12]
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def _load_intraday_chart(symbol: str, timeframe: str, _data_key: str) -> pd.DataFrame:
-    return fetch_intraday_chart_data(symbol, timeframe)
+REPORT_CACHE_VERSION = 14
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -67,13 +50,6 @@ DIRECTION_STYLE = {
     "看空": ("inverse", "↓"),
     "中性": ("off", "→"),
 }
-
-INTRADAY_SOURCE_LABELS = {
-    "finmind": "FinMind KBar",
-    "wantgoo": "玩股網",
-    "yfinance": "Yahoo Finance（備援）",
-}
-
 
 st.set_page_config(
     page_title="台股分析儀表板",
@@ -511,111 +487,22 @@ def main() -> None:
             key=f"chart_display_range_{chart_timeframe}",
         )
         chart_spec = TIMEFRAME_SPECS[chart_timeframe]
-        if not chart_spec.is_intraday:
-            st.caption(
-                "圖表會依顯示範圍擷取日線並重採樣；均線等指標在該區間資料上計算。"
-                " 訊號、評分與預測仍依側欄日線分析。"
-            )
+        st.caption(
+            "圖表會依顯示範圍擷取日線並重採樣；均線等指標在該區間資料上計算。"
+            " 訊號、評分與預測仍依側欄日線分析。"
+        )
 
         try:
-            if chart_spec.is_intraday:
-                chart_df = _load_intraday_chart(
-                    report.symbol, chart_timeframe, _intraday_data_cache_key()
-                )
-            else:
-                chart_period = fetch_period_for_display_range(chart_range)
-                daily_df = _load_chart_daily(report.symbol, chart_period)
-                chart_df = prepare_chart_data(daily_df, chart_timeframe)
+            chart_period = fetch_period_for_display_range(chart_range)
+            daily_df = _load_chart_daily(report.symbol, chart_period)
+            chart_df = prepare_chart_data(daily_df, chart_timeframe)
         except ValueError as e:
             st.warning(str(e))
             chart_df = report.ohlcv
             chart_timeframe = "日線"
             chart_spec = TIMEFRAME_SPECS["日線"]
 
-        if chart_spec.is_intraday:
-            src = chart_df.attrs.get("source", "unknown")
-            src_label = INTRADAY_SOURCE_LABELS.get(src, src)
-            warn = ""
-            if src == "yfinance":
-                warn = " Yahoo 成交量含較多交易類型，與玩股網（一般交易）常有差異。"
-                errs = chart_df.attrs.get("source_errors") or {}
-                if errs:
-                    finmind_err = errs.get("finmind", "—")
-                    if "Sponsor" in finmind_err:
-                        finmind_hint = (
-                            "Token 已設定，但帳號需升級為 **FinMind Sponsor 會員**"
-                            "（免費版無法取分 K）"
-                        )
-                    elif "未設定" in finmind_err:
-                        finmind_hint = "請在 Railway 設定 `FINMIND_API_TOKEN`"
-                    else:
-                        finmind_hint = finmind_err
-                    st.warning(
-                        "分 K 已改用 Yahoo 備援，成交量可能不正確。"
-                        f" FinMind：{finmind_hint}；"
-                        f"玩股網：{errs.get('wantgoo', '—')}。"
-                    )
-            st.caption(
-                f"目前資料來源：**{src_label}** · 成交量單位：張 · "
-                f"時間為 K 棒結束時間。{warn}"
-                "僅供圖表參考，訊號、評分與預測仍依日線。"
-            )
-
         display_df = slice_chart_display_range(chart_df, chart_range)
-        # #region agent log
-        import json, time
-        from pathlib import Path
-
-        from tw_stock_analyzer.indicators.chart_timeframe import chart_volume_lots
-
-        _idx = pd.to_datetime(display_df.index).sort_values()
-        _gaps = [
-            int((_idx[i] - _idx[i - 1]).days)
-            for i in range(1, len(_idx))
-            if (_idx[i] - _idx[i - 1]).days > 4
-        ]
-        _vol_sample = []
-        for _bi, (_ts, _row) in enumerate(display_df.tail(5).iterrows()):
-            _vol_sample.append(
-                {
-                    "bar_index": len(display_df) - 5 + _bi,
-                    "bar_start": str(_ts),
-                    "bar_end_label": format_chart_index(_ts, chart_spec),
-                    "ohlc": [
-                        float(_row["open"]),
-                        float(_row["high"]),
-                        float(_row["low"]),
-                        float(_row["close"]),
-                    ],
-                    "volume_shares": int(_row["volume"]),
-                    "volume_lots": int(chart_volume_lots(pd.Series([_row["volume"]])).iloc[0]),
-                }
-            )
-        _log = Path(__file__).resolve().parents[2] / "debug-938789.log"
-        with _log.open("a", encoding="utf-8") as _f:
-            _f.write(
-                json.dumps(
-                    {
-                        "sessionId": "938789",
-                        "hypothesisId": "A,D,E",
-                        "location": "app.py:tab_chart",
-                        "message": "display volume audit",
-                        "data": {
-                            "symbol": report.symbol,
-                            "chart_timeframe": chart_timeframe,
-                            "chart_range": chart_range,
-                            "display_rows": len(display_df),
-                            "display_start": str(_idx.min()) if len(_idx) else None,
-                            "display_end": str(_idx.max()) if len(_idx) else None,
-                            "gaps_over_4d": _gaps,
-                            "volume_tail": _vol_sample,
-                        },
-                        "timestamp": int(time.time() * 1000),
-                    }
-                )
-                + "\n"
-            )
-        # #endregion
 
         fib_bars = fib_lookback_bars(chart_timeframe, fib_lookback)
         fib = (
