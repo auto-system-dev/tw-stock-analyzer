@@ -20,38 +20,44 @@ from tw_stock_analyzer.indicators.chart_timeframe import (
 class ChartXAxis:
     coords: list
     is_ordinal: bool
-    tick_vals: list[int] | None = None
+    tick_vals: list[str] | None = None
     tick_text: list[str] | None = None
 
 
 def _build_chart_xaxis(df: pd.DataFrame, chart_spec: ChartTimeframeSpec) -> ChartXAxis:
-    """日/週/月線改用序數 X 軸，避免國定假日在時間軸上產生視覺空洞。"""
+    """日/週/月線與分 K 改用類別 X 軸，K 線與成交量等距排列、消除視覺空洞。"""
     if not uses_ordinal_x_axis(chart_spec):
         return ChartXAxis(coords=df.index.tolist(), is_ordinal=False)
     n = len(df)
+    coords = [format_chart_index(df.index[i], chart_spec) for i in range(n)]
     step = max(1, n // 6)
     tick_idxs = list(range(0, n, step))
     if tick_idxs[-1] != n - 1:
         tick_idxs.append(n - 1)
-    tick_text = [format_chart_index(df.index[i], chart_spec) for i in tick_idxs]
+    tick_labels = [coords[i] for i in tick_idxs]
     return ChartXAxis(
-        coords=list(range(n)),
+        coords=coords,
         is_ordinal=True,
-        tick_vals=tick_idxs,
-        tick_text=tick_text,
+        tick_vals=tick_labels,
+        tick_text=tick_labels,
     )
 
 
-def _apply_ordinal_ticks(fig: go.Figure, xaxis: ChartXAxis, *, bottom_row: int) -> None:
+def _apply_ordinal_axis(fig: go.Figure, xaxis: ChartXAxis, *, n_rows: int = 4) -> None:
     if not xaxis.is_ordinal or not xaxis.tick_vals:
         return
-    fig.update_xaxes(
-        tickmode="array",
-        tickvals=xaxis.tick_vals,
-        ticktext=xaxis.tick_text,
-        row=bottom_row,
-        col=1,
-    )
+    for row in range(1, n_rows + 1):
+        fig.update_xaxes(
+            type="category",
+            categoryorder="array",
+            categoryarray=xaxis.coords,
+            tickmode="array",
+            tickvals=xaxis.tick_vals,
+            ticktext=xaxis.tick_text,
+            row=row,
+            col=1,
+        )
+    fig.update_layout(bargap=0, bargroupgap=0)
 
 
 FIB_LINE_COLORS = {
@@ -337,7 +343,7 @@ def build_combined_chart(
     _add_hover_capture(fig, df, x_coords, 2, "volume")
     _add_hover_capture(fig, df, x_coords, 3, "rsi_14")
     _add_hover_capture(fig, df, x_coords, 4, "macd")
-    _apply_ordinal_ticks(fig, xaxis, bottom_row=4)
+    _apply_ordinal_axis(fig, xaxis)
     _apply_crosshair(fig)
     return fig
 
@@ -374,7 +380,7 @@ def build_price_chart(
     )
     fig.update_xaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)")
     fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)", title="價格")
-    _apply_ordinal_ticks(fig, xaxis, bottom_row=1)
+    _apply_ordinal_axis(fig, xaxis, n_rows=1)
     return fig
 
 
