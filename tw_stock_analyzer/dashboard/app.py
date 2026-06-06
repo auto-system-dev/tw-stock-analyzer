@@ -12,7 +12,7 @@ from tw_stock_analyzer.dashboard.interactive_chart import render_interactive_cha
 from tw_stock_analyzer.dashboard.equity_chart import build_equity_chart
 from tw_stock_analyzer.data.market_context import ensure_report_market_context
 from tw_stock_analyzer.dashboard.market_views import render_market_context
-from tw_stock_analyzer.dashboard.screener_service import run_screen
+from tw_stock_analyzer.dashboard.screener_service import run_screen_live
 from tw_stock_analyzer.dashboard.service import run_analysis
 from tw_stock_analyzer.data.fetcher import StockFetcher
 from tw_stock_analyzer.indicators.chart_timeframe import (
@@ -29,7 +29,7 @@ from tw_stock_analyzer.indicators.chart_timeframe import (
 from tw_stock_analyzer.indicators.fibonacci import compute_fibonacci_retracement
 
 # 分析報告結構版本；變更時清除舊 session 快取
-REPORT_CACHE_VERSION = 16
+REPORT_CACHE_VERSION = 17
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -131,6 +131,12 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, int]:
                 "自訂代號（選填，逗號分隔）",
                 placeholder="2330,2454,2303",
             )
+            if screen_opts["symbols_csv"].strip():
+                st.caption("已填自訂代號時，僅掃描這些股票，股票池下拉選單會被覆蓋。")
+            elif screen_opts["universe"] == "all":
+                st.caption(
+                    "全市場掃描較久且上限 120 檔；建議改用常用股或自訂 3～10 檔代號。"
+                )
             screen_opts["top_n"] = st.slider("Top N", 5, 30, 10)
             screen_opts["min_score"] = st.slider("最低綜合分", 0, 80, 0, step=5)
             screen_opts["bullish_only"] = st.checkbox("僅看多")
@@ -326,22 +332,40 @@ def render_screener_page(screen_opts: dict) -> None:
         resonance_min_4 = screen_opts.get("resonance_min_4", False)
         period = PERIOD_OPTIONS[screen_opts["period"]]
 
+        progress_bar = st.progress(0, text="準備掃描…")
+        status = st.empty()
+
+        def _on_progress(phase: str, current: int, total: int) -> None:
+            total = max(total, 1)
+            if phase == "fast":
+                ratio = min(1.0, current / total) * 0.65
+                label = f"快速技術掃描 {current}/{total}"
+            else:
+                ratio = 0.65 + min(1.0, current / total) * 0.35
+                label = f"深度評分 {current}/{total}"
+            status.caption(label)
+            progress_bar.progress(ratio, text=label)
+
         try:
-            with st.spinner("正在掃描…（常用股約 1–2 分鐘，全市場較久）"):
-                result = run_screen(
-                    universe,
-                    symbols_csv,
-                    top_n,
-                    min_score,
-                    bullish_only,
-                    period,
-                    resonance_full_only,
-                    resonance_min_4,
-                )
+            result = run_screen_live(
+                universe,
+                symbols_csv,
+                top_n,
+                min_score,
+                bullish_only,
+                period,
+                resonance_full_only=resonance_full_only,
+                resonance_min_4=resonance_min_4,
+                progress=_on_progress,
+            )
+            progress_bar.progress(1.0, text="掃描完成")
             st.session_state["screener_result"] = result
         except Exception as e:
             st.error(f"掃描失敗：{e}")
             return
+        finally:
+            progress_bar.empty()
+            status.empty()
 
     result = st.session_state.get("screener_result")
     if result is None:

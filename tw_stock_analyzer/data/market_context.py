@@ -22,7 +22,7 @@ class MarketContextProvider:
         self.social = SocialProvider()
         self.themes = ThemeDetector()
 
-    def fetch(self, symbol: str, name: str = "") -> MarketContext:
+    def fetch(self, symbol: str, name: str = "", *, lightweight: bool = False) -> MarketContext:
         notes: list[str] = []
         fund = self.fundamentals.fetch(symbol)
         inst = self.institutional.fetch(symbol)
@@ -31,13 +31,19 @@ class MarketContextProvider:
                 "籌碼：需設定 FINMIND_API_TOKEN（https://finmindtrade.com/）"
             )
 
-        news_items, announcements = self.news.fetch(symbol)
-        if not news_items and not announcements:
-            notes.append("新聞：Yahoo / FinMind 暫無資料")
+        if lightweight:
+            news_items: list = []
+            announcements: list = []
+            social_items: list = []
+            notes.append("批次掃描略過新聞/社群以加速")
+        else:
+            news_items, announcements = self.news.fetch(symbol)
+            if not news_items and not announcements:
+                notes.append("新聞：Yahoo / FinMind 暫無資料")
 
-        social_items = self.social.fetch(symbol, name)
-        if not social_items:
-            notes.append("社群：Google News RSS 未取得結果（可能為網路限制）")
+            social_items = self.social.fetch(symbol, name)
+            if not social_items:
+                notes.append("社群：Google News RSS 未取得結果（可能為網路限制）")
 
         if not os.getenv("FINMIND_API_TOKEN", "").strip():
             notes.append(

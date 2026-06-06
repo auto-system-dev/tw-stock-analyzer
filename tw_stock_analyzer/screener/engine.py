@@ -25,6 +25,10 @@ from tw_stock_analyzer.screener.models import RankedStock, ScreenerResult
 from tw_stock_analyzer.screener.universe import get_universe, resolve_name
 
 
+# 網頁全市場掃描上限，避免 Streamlit WebSocket 逾時
+MAX_ALL_MARKET_SCAN = 120
+
+
 class ScreenerEngine:
     """兩階段掃描：快速技術篩選 → 深度基本面/籌碼評分。"""
 
@@ -33,11 +37,13 @@ class ScreenerEngine:
         *,
         period: str = "1y",
         institutional_days: int = 5,
+        lightweight_deep: bool = False,
     ):
         self.fetcher = StockFetcher()
         self.indicators = TechnicalIndicators()
         self.market = MarketContextProvider(institutional_days=institutional_days)
         self.period = period
+        self.lightweight_deep = lightweight_deep
 
     def _fast_score(self, latest: pd.Series, signals: dict[str, str]) -> int:
         """快速分：技術規則 + 動能（不含 ML 與 API）。"""
@@ -75,6 +81,16 @@ class ScreenerEngine:
         stock_ids, label = get_universe(universe, symbols)
         notes: list[str] = []
 
+        if symbols:
+            notes.append(f"已使用自訂代號（{len(stock_ids)} 檔），股票池設定已覆蓋")
+
+        if universe == "all" and not symbols and len(stock_ids) > MAX_ALL_MARKET_SCAN:
+            stock_ids = stock_ids[:MAX_ALL_MARKET_SCAN]
+            notes.append(
+                f"全市場掃描上限 {MAX_ALL_MARKET_SCAN} 檔（避免連線逾時），"
+                "建議改用常用股或自訂代號"
+            )
+
         if universe == "all" and "備援" in label:
             notes.append("FinMind 全市場清單不可用，已改用常用股清單")
 
@@ -107,7 +123,9 @@ class ScreenerEngine:
                 progress("deep", idx, deep_total)
             try:
                 name = resolve_name(stock_id)
-                ctx = self.market.fetch(stock_id, name)
+                ctx = self.market.fetch(
+                    stock_id, name, lightweight=self.lightweight_deep
+                )
                 score = compute_potential_score(
                     latest,
                     signals,
