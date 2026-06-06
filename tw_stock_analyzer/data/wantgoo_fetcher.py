@@ -6,7 +6,7 @@ import time
 from typing import Any
 
 import pandas as pd
-import requests
+from curl_cffi import requests
 
 from tw_stock_analyzer.data.symbol_utils import to_stock_id
 
@@ -34,14 +34,9 @@ class WantGooFetcher:
     """擷取玩股網 investrue K 線（成交量為張，僅含一般交易）。"""
 
     def __init__(self) -> None:
-        self._session = requests.Session()
+        self._session = requests.Session(impersonate="chrome136")
         self._session.headers.update(
             {
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/120.0.0.0 Safari/537.36"
-                ),
                 "Accept": "application/json, text/javascript, */*; q=0.01",
                 "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
                 "X-Requested-With": "XMLHttpRequest",
@@ -57,51 +52,80 @@ class WantGooFetcher:
         )
 
     def _get_json(self, path: str) -> list[dict[str, Any]]:
-        resp = self._session.get(f"{WANTGOO_BASE}{path}", timeout=30)
+        url = f"{WANTGOO_BASE}{path}"
+        resp = self._session.get(url, timeout=30)
+        # #region agent log
+        import json
+        from pathlib import Path
+
+        _log = Path(__file__).resolve().parents[2] / "debug-938789.log"
+        with _log.open("a", encoding="utf-8") as _f:
+            _f.write(
+                json.dumps(
+                    {
+                        "sessionId": "938789",
+                        "hypothesisId": "A,B,C",
+                        "location": "wantgoo_fetcher.py:_get_json",
+                        "message": "wantgoo http response",
+                        "data": {
+                            "path": path,
+                            "status": resp.status_code,
+                            "ok": resp.ok,
+                            "body_prefix": (resp.text or "")[:120],
+                        },
+                        "timestamp": int(time.time() * 1000),
+                    }
+                )
+                + "\n"
+            )
+        # #endregion
         resp.raise_for_status()
         data = resp.json()
         if not isinstance(data, list):
             raise ValueError(f"玩股網回傳格式異常：{type(data)}")
         return data
 
-    def _chunk_before_ms(self, candlestick_type: str) -> int:
+    def _historical_before_candidates(self, candlestick_type: str) -> list[int]:
+        """玩股網 before 參數容錯：部分時段僅特定偏移可通過。"""
         now = pd.Timestamp.now(tz="Asia/Taipei")
         if candlestick_type == "minute":
-            anchor = now.floor("min") - pd.Timedelta(minutes=15)
+            anchors = [now.floor("min") - pd.Timedelta(minutes=m) for m in range(15, 45, 5)]
         elif candlestick_type in {"five-minutes", "quarter-hour"}:
-            anchor = now.floor("h") - pd.Timedelta(hours=2)
+            anchors = [now.floor("h") - pd.Timedelta(hours=h) for h in range(2, 26)]
         elif candlestick_type in {"half-hour", "hour"}:
-            anchor = now.floor("h") - pd.Timedelta(hours=3)
+            anchors = [now.floor("h") - pd.Timedelta(hours=h) for h in range(3, 31)]
         else:
-            anchor = now.floor("D") - pd.Timedelta(days=5)
-        return int(anchor.value // 1_000_000)
+            anchors = [now.floor("D") - pd.Timedelta(days=d) for d in range(5, 12)]
+        return [int(a.value // 1_000_000) for a in anchors]
 
     def fetch_candlesticks(self, symbol: str, timeframe: str) -> pd.DataFrame:
         stock_id = to_stock_id(symbol)
         candlestick_type = TIMEFRAME_TO_CANDLESTICK[timeframe]
         self._prime_session(stock_id)
 
-        live_path = f"/investrue/{stock_id.lower()}/{candlestick_type.replace('_', '-')}-candlesticks"
-        hist_path = (
-            f"/investrue/{stock_id.lower()}/historical-"
-            f"{candlestick_type.replace('_', '-')}-candlesticks"
-            f"?before={self._chunk_before_ms(candlestick_type)}"
-        )
+        stick = candlestick_type.replace("_", "-")
+        live_base = f"/investrue/{stock_id.lower()}/{stick}-candlesticks"
+        hist_base = f"/investrue/{stock_id.lower()}/historical-{stick}-candlesticks"
 
         rows: list[dict[str, Any]] = []
+        for before_ms in self._historical_before_candidates(candlestick_type):
+            try:
+                rows.extend(self._get_json(f"{hist_base}?before={before_ms}"))
+                break
+            except Exception:
+                continue
         try:
-            rows.extend(self._get_json(hist_path))
-        except Exception:
-            pass
-        try:
+            live_path = live_base
+            if rows:
+                last_hist = max(r["time"] for r in rows)
+                live_path = f"{live_base}?after={last_hist}"
             live_rows = self._get_json(live_path)
             if rows:
                 last_hist = max(r["time"] for r in rows)
                 live_rows = [r for r in live_rows if r["time"] > last_hist]
             rows.extend(live_rows)
         except Exception:
-            if not rows:
-                raise
+            pass
 
         if not rows:
             raise ValueError(f"玩股網無 {timeframe} 資料")

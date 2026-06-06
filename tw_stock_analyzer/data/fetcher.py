@@ -1,12 +1,15 @@
-"""從 Yahoo Finance 擷取台股歷史資料。"""
+"""擷取台股歷史資料：日線優先 TWSE，其餘備援 Yahoo Finance。"""
 
 from __future__ import annotations
+
+import re
 
 import pandas as pd
 import yfinance as yf
 
 from tw_stock_analyzer.data.stock_names import resolve_tw_stock_name
-from tw_stock_analyzer.data.symbol_utils import normalize_symbol
+from tw_stock_analyzer.data.symbol_utils import normalize_symbol, to_stock_id
+from tw_stock_analyzer.data.twse_fetcher import TwseDailyFetcher
 
 
 class StockFetcher:
@@ -23,12 +26,32 @@ class StockFetcher:
 
         Args:
             symbol: 股票代號（如 2330 或 2330.TW）
-            period: yfinance period（1mo, 6mo, 1y, 2y, 5y, max）
+            period: 資料期間（1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, max）
             interval: K 線週期（1d, 1wk, 1mo）
 
         Returns:
-            含 Open, High, Low, Close, Volume 的 DataFrame
+            含 open, high, low, close, volume 的 DataFrame
         """
+        if interval == "1d" and self._can_use_twse_daily(symbol):
+            try:
+                return TwseDailyFetcher().fetch(symbol, period=period)
+            except Exception:
+                pass
+        return self._fetch_yfinance(symbol, period=period, interval=interval)
+
+    @staticmethod
+    def _can_use_twse_daily(symbol: str) -> bool:
+        stock_id = to_stock_id(symbol)
+        if ".TWO" in normalize_symbol(symbol).upper():
+            return False
+        return bool(re.fullmatch(r"\d{4,6}", stock_id))
+
+    def _fetch_yfinance(
+        self,
+        symbol: str,
+        period: str,
+        interval: str,
+    ) -> pd.DataFrame:
         ticker = normalize_symbol(symbol)
         raw = yf.download(
             ticker,
@@ -60,6 +83,7 @@ class StockFetcher:
         df = df[required].dropna()
         df.index = pd.to_datetime(df.index)
         df.attrs["symbol"] = ticker
+        df.attrs["source"] = "yfinance"
         return df
 
     def fetch_info(self, symbol: str) -> dict:
