@@ -59,7 +59,7 @@ DISPLAY_RANGES_BY_TIMEFRAME: dict[str, tuple[str, ...]] = {
     "5分": ("5 日", "10 日", "20 日"),
     "15分": ("10 日", "20 日", "40 日"),
     "30分": ("10 日", "20 日", "40 日"),
-    "60分": ("1 個月", "3 個月", "6 個月"),
+    "60分": ("2 週", "1 個月", "2 個月"),
     "日線": ("3 個月", "6 個月", "12 個月"),
     "週線": ("1 年", "3 年", "5 年"),
     "月線": ("2 年", "5 年", "10 年"),
@@ -72,7 +72,9 @@ DISPLAY_RANGE_FETCH_PERIOD: dict[str, str] = {
     "10 日": "3mo",
     "20 日": "6mo",
     "40 日": "1y",
+    "2 週": "1mo",
     "1 個月": "3mo",
+    "2 個月": "6mo",
     "3 個月": "6mo",
     "6 個月": "1y",
     "12 個月": "2y",
@@ -90,7 +92,9 @@ DISPLAY_RANGE_OFFSET: dict[str, pd.DateOffset] = {
     "10 日": pd.DateOffset(days=10),
     "20 日": pd.DateOffset(days=20),
     "40 日": pd.DateOffset(days=40),
+    "2 週": pd.DateOffset(weeks=2),
     "1 個月": pd.DateOffset(months=1),
+    "2 個月": pd.DateOffset(months=2),
     "3 個月": pd.DateOffset(months=3),
     "6 個月": pd.DateOffset(months=6),
     "12 個月": pd.DateOffset(months=12),
@@ -237,8 +241,8 @@ ORDINAL_X_TIMEFRAMES = frozenset({"日線", "週線", "月線"})
 
 
 def uses_ordinal_x_axis(spec: ChartTimeframeSpec) -> bool:
-    """日/週/月線使用序數 X 軸，避免國定假日在時間軸產生視覺空洞。"""
-    return spec.label in ORDINAL_X_TIMEFRAMES
+    """日/週/月線與分 K 使用序數 X 軸，避免盤後與假日在時間軸產生視覺空洞。"""
+    return spec.label in ORDINAL_X_TIMEFRAMES or spec.is_intraday
 
 
 def chart_hover_key(bar_index: int, ts: pd.Timestamp, spec: ChartTimeframeSpec) -> str:

@@ -54,6 +54,20 @@ def _apply_ordinal_ticks(fig: go.Figure, xaxis: ChartXAxis, *, bottom_row: int) 
     )
 
 
+def _apply_ordinal_bar_width(fig: go.Figure) -> None:
+    """序數 X 軸下加寬 K 線與成交量柱，提升可讀性。"""
+    fig.update_traces(
+        xperiod=0.85,
+        xperiodalignment="middle",
+        selector=dict(type="candlestick"),
+    )
+    fig.update_traces(
+        xperiod=0.85,
+        xperiodalignment="middle",
+        selector=dict(type="bar"),
+    )
+
+
 FIB_LINE_COLORS = {
     "0%": "#94a3b8",
     "38.2%": "#eab308",
@@ -338,6 +352,8 @@ def build_combined_chart(
     _add_hover_capture(fig, df, x_coords, 3, "rsi_14")
     _add_hover_capture(fig, df, x_coords, 4, "macd")
     _apply_ordinal_ticks(fig, xaxis, bottom_row=4)
+    if xaxis.is_ordinal:
+        _apply_ordinal_bar_width(fig)
     _apply_crosshair(fig)
     return fig
 
@@ -375,6 +391,8 @@ def build_price_chart(
     fig.update_xaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)")
     fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)", title="價格")
     _apply_ordinal_ticks(fig, xaxis, bottom_row=1)
+    if xaxis.is_ordinal:
+        _apply_ordinal_bar_width(fig)
     return fig
 
 
