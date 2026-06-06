@@ -14,12 +14,14 @@ from tw_stock_analyzer.data.market_context import ensure_report_market_context
 from tw_stock_analyzer.dashboard.market_views import render_market_context
 from tw_stock_analyzer.dashboard.screener_service import run_screen
 from tw_stock_analyzer.dashboard.service import run_analysis
+from tw_stock_analyzer.data.fetcher import StockFetcher
 from tw_stock_analyzer.indicators.chart_timeframe import (
     CHART_TIMEFRAME_DEFAULT,
     CHART_TIMEFRAME_OPTIONS,
     TIMEFRAME_SPECS,
     display_range_options_for,
     fetch_intraday_chart_data,
+    fetch_period_for_display_range,
     fib_lookback_bars,
     format_chart_index,
     prepare_chart_data,
@@ -34,6 +36,11 @@ REPORT_CACHE_VERSION = 12
 @st.cache_data(ttl=300, show_spinner=False)
 def _load_intraday_chart(symbol: str, timeframe: str) -> pd.DataFrame:
     return fetch_intraday_chart_data(symbol, timeframe)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _load_chart_daily(symbol: str, period: str) -> pd.DataFrame:
+    return StockFetcher().fetch(symbol, period=period)
 
 PERIOD_OPTIONS = {
     "3 個月": "3mo",
@@ -494,15 +501,17 @@ def main() -> None:
             )
         else:
             st.caption(
-                "圖表週期與顯示範圍僅影響 K 線；均線等指標依側欄「歷史資料期間」完整資料計算。"
-                " 訊號、評分與預測仍依日線。"
+                "圖表會依顯示範圍擷取日線並重採樣；均線等指標在該區間資料上計算。"
+                " 訊號、評分與預測仍依側欄日線分析。"
             )
 
         try:
             if chart_spec.is_intraday:
                 chart_df = _load_intraday_chart(report.symbol, chart_timeframe)
             else:
-                chart_df = prepare_chart_data(report.ohlcv, chart_timeframe)
+                chart_period = fetch_period_for_display_range(chart_range)
+                daily_df = _load_chart_daily(report.symbol, chart_period)
+                chart_df = prepare_chart_data(daily_df, chart_timeframe)
         except ValueError as e:
             st.warning(str(e))
             chart_df = report.ohlcv

@@ -65,6 +65,24 @@ DISPLAY_RANGES_BY_TIMEFRAME: dict[str, tuple[str, ...]] = {
     "月線": ("2 年", "5 年", "10 年"),
 }
 
+DISPLAY_RANGE_FETCH_PERIOD: dict[str, str] = {
+    "1 日": "7d",
+    "3 日": "1mo",
+    "5 日": "1mo",
+    "10 日": "3mo",
+    "20 日": "6mo",
+    "40 日": "1y",
+    "1 個月": "3mo",
+    "3 個月": "6mo",
+    "6 個月": "1y",
+    "12 個月": "2y",
+    "1 年": "2y",
+    "2 年": "2y",
+    "3 年": "5y",
+    "5 年": "5y",
+    "10 年": "10y",
+}
+
 DISPLAY_RANGE_OFFSET: dict[str, pd.DateOffset] = {
     "1 日": pd.DateOffset(days=1),
     "3 日": pd.DateOffset(days=3),
@@ -87,6 +105,11 @@ DISPLAY_RANGE_OFFSET: dict[str, pd.DateOffset] = {
 def display_range_options_for(timeframe: str) -> tuple[str, ...]:
     """依 K 線週期回傳對應顯示範圍選項。"""
     return DISPLAY_RANGES_BY_TIMEFRAME[timeframe]
+
+
+def fetch_period_for_display_range(range_label: str) -> str:
+    """將顯示範圍標籤轉為 Yahoo Finance 擷取期間。"""
+    return DISPLAY_RANGE_FETCH_PERIOD.get(range_label, "2y")
 
 
 def slice_chart_display_range(df: pd.DataFrame, range_label: str) -> pd.DataFrame:
