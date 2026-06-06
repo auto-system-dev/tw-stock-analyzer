@@ -15,6 +15,7 @@ from tw_stock_analyzer.indicators.chart_timeframe import (
     ChartTimeframeSpec,
     TIMEFRAME_SPECS,
     chart_hover_key,
+    chart_volume_lots,
     format_chart_index,
 )
 from tw_stock_analyzer.indicators.fibonacci import FibonacciRetracement
@@ -46,7 +47,7 @@ def build_hover_data(
             "open": float(row["open"]),
             "high": float(row["high"]),
             "low": float(row["low"]),
-            "volume": float(row["volume"]) / 1000,
+            "volume": int(chart_volume_lots(pd.Series([row["volume"]])).iloc[0]),
             "change": change,
             "change_pct": change_pct,
             "rsi": _num(row.get("rsi_14")),

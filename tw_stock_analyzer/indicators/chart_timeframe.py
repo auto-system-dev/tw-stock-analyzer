@@ -17,7 +17,7 @@ TW_SHARES_PER_LOT = 1000
 
 def chart_volume_lots(volume: pd.Series) -> pd.Series:
     """台股圖表成交量：Yahoo 為股數，轉為張（1 張 = 1000 股）。"""
-    return volume / TW_SHARES_PER_LOT
+    return (volume / TW_SHARES_PER_LOT).round().astype("int64")
 
 # 台股單日盤中約 270 分鐘（09:00–13:30）
 MINUTES_PER_SESSION = 270
@@ -212,6 +212,46 @@ def fetch_intraday_chart_data(symbol: str, timeframe: str) -> pd.DataFrame:
     )
     if raw.empty:
         raise ValueError(f"無法取得 {timeframe} 資料，Yahoo 可能暫不提供此週期。")
+    # #region agent log
+    import json, time
+    from pathlib import Path
+
+    _spec = spec
+    _sample = []
+    for _idx, _row in raw.tail(8).iterrows():
+        _sample.append(
+            {
+                "bar_start": str(_idx),
+                "bar_end_label": format_chart_index(_idx, _spec),
+                "open": float(_row["open"]),
+                "high": float(_row["high"]),
+                "low": float(_row["low"]),
+                "close": float(_row["close"]),
+                "volume_shares": int(_row["volume"]),
+                "volume_lots": int(chart_volume_lots(pd.Series([_row["volume"]])).iloc[0]),
+            }
+        )
+    _log = Path(__file__).resolve().parents[2] / "debug-938789.log"
+    with _log.open("a", encoding="utf-8") as _f:
+        _f.write(
+            json.dumps(
+                {
+                    "sessionId": "938789",
+                    "hypothesisId": "A,B,C",
+                    "location": "chart_timeframe.py:fetch_intraday_chart_data",
+                    "message": "raw intraday volume from yfinance",
+                    "data": {
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "rows": len(raw),
+                        "sample_tail": _sample,
+                    },
+                    "timestamp": int(time.time() * 1000),
+                }
+            )
+            + "\n"
+        )
+    # #endregion
     return compute_chart_indicators(raw, spec)
 
 
@@ -228,13 +268,24 @@ def prepare_chart_data(daily_df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     return compute_chart_indicators(base, spec)
 
 
-def format_chart_index(ts: pd.Timestamp, spec: ChartTimeframeSpec) -> str:
-    """格式化圖表索引供 UI 顯示。"""
+def _intraday_bar_end(ts: pd.Timestamp, spec: ChartTimeframeSpec) -> pd.Timestamp:
+    """分 K 棒結束時間（Yahoo 股市以棒結束時間標示）。"""
     t = pd.Timestamp(ts)
     if t.tz is not None:
         t = t.tz_convert("Asia/Taipei")
+    bar_mins = INTRADAY_BAR_MINUTES[spec.label]
+    end = t + pd.Timedelta(minutes=bar_mins)
+    session_close = t.normalize() + pd.Timedelta(hours=13, minutes=30)
+    return min(end, session_close)
+
+
+def format_chart_index(ts: pd.Timestamp, spec: ChartTimeframeSpec) -> str:
+    """格式化圖表索引供 UI 顯示。"""
     if spec.is_intraday:
-        return t.strftime("%Y-%m-%d %H:%M")
+        return _intraday_bar_end(ts, spec).strftime("%Y-%m-%d %H:%M")
+    t = pd.Timestamp(ts)
+    if t.tz is not None:
+        t = t.tz_convert("Asia/Taipei")
     return t.strftime("%Y-%m-%d")
 
 

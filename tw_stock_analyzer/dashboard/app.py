@@ -496,8 +496,8 @@ def main() -> None:
         chart_spec = TIMEFRAME_SPECS[chart_timeframe]
         if chart_spec.is_intraday:
             st.caption(
-                "分 K 資料來自 Yahoo Finance（可能有 15–20 分鐘延遲）；"
-                "成交量以「張」顯示（1 張 = 1000 股），與玩股網可能因資料來源與 K 棒切分略有差異。"
+                "分 K 資料來自 Yahoo Finance API（與 yfinance 相同來源，可能有 15–20 分鐘延遲）；"
+                "時間為 K 棒結束時間，成交量以「張」顯示（1 張 = 1000 股）。"
                 " 僅供圖表參考，訊號、評分與預測仍依日線。"
             )
         else:
@@ -523,11 +523,56 @@ def main() -> None:
         # #region agent log
         import json, time
         from pathlib import Path
+
+        from tw_stock_analyzer.indicators.chart_timeframe import chart_volume_lots
+
         _idx = pd.to_datetime(display_df.index).sort_values()
-        _gaps = [int((_idx[i] - _idx[i - 1]).days) for i in range(1, len(_idx)) if (_idx[i] - _idx[i - 1]).days > 4]
+        _gaps = [
+            int((_idx[i] - _idx[i - 1]).days)
+            for i in range(1, len(_idx))
+            if (_idx[i] - _idx[i - 1]).days > 4
+        ]
+        _vol_sample = []
+        for _bi, (_ts, _row) in enumerate(display_df.tail(5).iterrows()):
+            _vol_sample.append(
+                {
+                    "bar_index": len(display_df) - 5 + _bi,
+                    "bar_start": str(_ts),
+                    "bar_end_label": format_chart_index(_ts, chart_spec),
+                    "ohlc": [
+                        float(_row["open"]),
+                        float(_row["high"]),
+                        float(_row["low"]),
+                        float(_row["close"]),
+                    ],
+                    "volume_shares": int(_row["volume"]),
+                    "volume_lots": int(chart_volume_lots(pd.Series([_row["volume"]])).iloc[0]),
+                }
+            )
         _log = Path(__file__).resolve().parents[2] / "debug-938789.log"
         with _log.open("a", encoding="utf-8") as _f:
-            _f.write(json.dumps({"sessionId": "938789", "hypothesisId": "E", "location": "app.py:tab_chart", "message": "bar gap check", "data": {"chart_timeframe": chart_timeframe, "chart_range": chart_range, "display_rows": len(display_df), "display_start": str(_idx.min()) if len(_idx) else None, "display_end": str(_idx.max()) if len(_idx) else None, "gaps_over_4d": _gaps, "gap_count_over_4d": len(_gaps), "x_axis": "linear_fixed" if chart_spec.is_intraday or chart_timeframe in ("日線", "週線", "月線") else "datetime"}, "timestamp": int(time.time() * 1000)}) + "\n")
+            _f.write(
+                json.dumps(
+                    {
+                        "sessionId": "938789",
+                        "hypothesisId": "A,D,E",
+                        "location": "app.py:tab_chart",
+                        "message": "display volume audit",
+                        "data": {
+                            "symbol": report.symbol,
+                            "chart_timeframe": chart_timeframe,
+                            "chart_range": chart_range,
+                            "display_rows": len(display_df),
+                            "display_start": str(_idx.min()) if len(_idx) else None,
+                            "display_end": str(_idx.max()) if len(_idx) else None,
+                            "gaps_over_4d": _gaps,
+                            "volume_tail": _vol_sample,
+                        },
+                        "timestamp": int(time.time() * 1000),
+                    }
+                )
+                + "\n"
+            )
         # #endregion
 
         fib_bars = fib_lookback_bars(chart_timeframe, fib_lookback)
