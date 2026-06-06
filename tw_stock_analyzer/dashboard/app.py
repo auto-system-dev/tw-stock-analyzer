@@ -540,11 +540,20 @@ def main() -> None:
                 warn = " Yahoo 成交量含較多交易類型，與玩股網（一般交易）常有差異。"
                 errs = chart_df.attrs.get("source_errors") or {}
                 if errs:
+                    finmind_err = errs.get("finmind", "—")
+                    if "Sponsor" in finmind_err:
+                        finmind_hint = (
+                            "Token 已設定，但帳號需升級為 **FinMind Sponsor 會員**"
+                            "（免費版無法取分 K）"
+                        )
+                    elif "未設定" in finmind_err:
+                        finmind_hint = "請在 Railway 設定 `FINMIND_API_TOKEN`"
+                    else:
+                        finmind_hint = finmind_err
                     st.warning(
                         "分 K 已改用 Yahoo 備援，成交量可能不正確。"
-                        f" FinMind：{errs.get('finmind', '—')}；"
+                        f" FinMind：{finmind_hint}；"
                         f"玩股網：{errs.get('wantgoo', '—')}。"
-                        " 請在 Railway 設定 `FINMIND_API_TOKEN`（Sponsor 會員）後重新部署。"
                     )
             st.caption(
                 f"目前資料來源：**{src_label}** · 成交量單位：張 · "
