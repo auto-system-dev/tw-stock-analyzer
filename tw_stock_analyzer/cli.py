@@ -11,8 +11,14 @@ from rich.table import Table
 
 from tw_stock_analyzer.analyzer.engine import StockAnalyzer
 from tw_stock_analyzer.backtest.engine import BacktestEngine
+from tw_stock_analyzer.notifications.resonance_alert import (
+    format_resonance_telegram_message,
+    scan_resonance_hits,
+)
+from tw_stock_analyzer.notifications.telegram import TelegramConfigError, send_telegram_message
 from tw_stock_analyzer.screener.engine import ScreenerEngine
 from tw_stock_analyzer.screener.filters import ScreenerFilters
+from tw_stock_analyzer.screener.universe import get_universe
 
 
 def _make_console() -> Console:
@@ -300,6 +306,98 @@ def screen_cmd(
     console.print(
         "[dim]免責聲明：本工具輸出僅供學習與研究，不構成任何投資建議。[/dim]"
     )
+
+
+@main.command("notify-resonance")
+@click.option(
+    "--universe",
+    "-u",
+    type=click.Choice(["watchlist", "all"], case_sensitive=False),
+    default="watchlist",
+    show_default=True,
+    help="股票池",
+)
+@click.option(
+    "--symbols",
+    "-s",
+    default="",
+    help="自訂代號（逗號分隔），指定時忽略 --universe",
+)
+@click.option(
+    "--min-resonance",
+    default=5,
+    show_default=True,
+    type=click.IntRange(1, 6),
+    help="至少符合幾項多頭共振（1～6）",
+)
+@click.option(
+    "--period",
+    "-p",
+    default="1y",
+    show_default=True,
+    help="掃描用的歷史資料期間",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="只掃描並印出訊息，不發送 Telegram",
+)
+@click.option(
+    "--notify-empty",
+    is_flag=True,
+    default=False,
+    help="無符合標的時也發送 Telegram（預設僅在有符合時發送）",
+)
+def notify_resonance_cmd(
+    universe: str,
+    symbols: str,
+    min_resonance: int,
+    period: str,
+    dry_run: bool,
+    notify_empty: bool,
+) -> None:
+    """掃描多頭共振並發送 Telegram，例如：tw-stock notify-resonance --min-resonance 5"""
+    sym_list = [s.strip() for s in symbols.split(",") if s.strip()] or None
+    _, universe_label = get_universe(universe.lower(), sym_list)
+
+    try:
+        with console.status("[bold green]掃描多頭共振…"):
+            hits = scan_resonance_hits(
+                universe=universe.lower(),
+                symbols=sym_list,
+                min_passed=min_resonance,
+                period=period,
+            )
+    except Exception as e:
+        console.print(f"[red]錯誤：{e}[/red]")
+        raise SystemExit(1) from e
+
+    message = format_resonance_telegram_message(
+        hits,
+        min_passed=min_resonance,
+        universe_label=universe_label,
+    )
+    console.print(message)
+
+    if dry_run:
+        console.print("[yellow]dry-run 模式，未發送 Telegram。[/yellow]")
+        return
+
+    if not hits and not notify_empty:
+        console.print("[dim]無符合標的，略過 Telegram 通知。[/dim]")
+        return
+
+    try:
+        send_telegram_message(message)
+    except TelegramConfigError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from e
+    except Exception as e:
+        console.print(f"[red]Telegram 發送失敗：{e}[/red]")
+        raise SystemExit(1) from e
+
+    console.print(f"[green]已發送 Telegram（{len(hits)} 檔符合 ≥ {min_resonance}/6）。[/green]")
 
 
 @main.command("backtest")
