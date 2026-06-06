@@ -140,11 +140,14 @@ function fmtVol(n) {{
 }}
 
 function xToKey(x) {{
+  const raw = String(x);
+  if (dataMap[raw]) return raw;
   const d = new Date(x);
   if (!Number.isNaN(d.getTime())) {{
-    return String(d.getTime());
+    const ms = String(d.getTime());
+    if (dataMap[ms]) return ms;
   }}
-  return String(x);
+  return raw;
 }}
 
 function renderBar(d) {{
