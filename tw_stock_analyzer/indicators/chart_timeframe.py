@@ -211,7 +211,7 @@ def prepare_chart_data(daily_df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     if spec.is_intraday:
         raise ValueError(f"{timeframe} 請改用 fetch_intraday_chart_data。")
     if spec.resample_rule is None:
-        return daily_df
+        return compute_chart_indicators(daily_df, spec)
     base = resample_ohlcv(daily_df, spec.resample_rule)
     if base.empty:
         raise ValueError(f"{timeframe} 資料不足，請延長歷史資料期間。")
