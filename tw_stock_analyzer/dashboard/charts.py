@@ -13,6 +13,7 @@ from tw_stock_analyzer.indicators.chart_timeframe import (
     ChartTimeframeSpec,
     TIMEFRAME_SPECS,
     format_chart_index,
+    uses_ordinal_x_axis,
 )
 
 @dataclass(frozen=True)
@@ -24,8 +25,8 @@ class ChartXAxis:
 
 
 def _build_chart_xaxis(df: pd.DataFrame, chart_spec: ChartTimeframeSpec) -> ChartXAxis:
-    """日線改用序數 X 軸，避免週末與國定假日在時間軸上產生視覺空洞。"""
-    if chart_spec.label != "日線":
+    """日/週/月線改用序數 X 軸，避免國定假日在時間軸上產生視覺空洞。"""
+    if not uses_ordinal_x_axis(chart_spec):
         return ChartXAxis(coords=df.index.tolist(), is_ordinal=False)
     n = len(df)
     step = max(1, n // 6)

@@ -233,8 +233,16 @@ def hover_key(ts: pd.Timestamp) -> str:
     return str(int(pd.Timestamp(ts).value // 1_000_000))
 
 
+ORDINAL_X_TIMEFRAMES = frozenset({"日線", "週線", "月線"})
+
+
+def uses_ordinal_x_axis(spec: ChartTimeframeSpec) -> bool:
+    """日/週/月線使用序數 X 軸，避免國定假日在時間軸產生視覺空洞。"""
+    return spec.label in ORDINAL_X_TIMEFRAMES
+
+
 def chart_hover_key(bar_index: int, ts: pd.Timestamp, spec: ChartTimeframeSpec) -> str:
-    """產生與 Plotly x 軸對齊的 hover 鍵（日線用序數索引，其餘用時間戳）。"""
-    if spec.label == "日線":
+    """產生與 Plotly x 軸對齊的 hover 鍵。"""
+    if uses_ordinal_x_axis(spec):
         return str(bar_index)
     return hover_key(ts)
