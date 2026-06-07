@@ -77,9 +77,11 @@ def _apply_ordinal_axis(fig: go.Figure, xaxis: ChartXAxis, *, n_rows: int = 4) -
 
 FIB_LINE_COLORS = {
     "0%": "#94a3b8",
+    "23.6%": "#64748b",
     "38.2%": "#eab308",
     "50%": "#f59e0b",
     "61.8%": "#f97316",
+    "78.6%": "#fb923c",
     "100%": "#94a3b8",
 }
 

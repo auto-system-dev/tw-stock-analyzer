@@ -123,7 +123,7 @@ def _chart_html(
     cursor: grabbing !important;
   }"""
         fib_hint_html = (
-            '<div id="fib-hint">手動模式：拖動黃點調整錨點（X 對齊 K 線 · Y 自由定價，靠近 OHLC 會吸附）</div>'
+            '<div id="fib-hint">手動模式：拖動黃點調整錨點（參考 TradingView · 兩點/三點自由定位 · 水平線向右延伸）</div>'
         )
     return f"""<!DOCTYPE html>
 <html>
@@ -411,10 +411,17 @@ let hasFibManual = false;
 
 const FIB_RET_COLORS = {{
   '0%': '#94a3b8',
+  '23.6%': '#64748b',
   '38.2%': '#eab308',
   '50%': '#f59e0b',
   '61.8%': '#f97316',
+  '78.6%': '#fb923c',
   '100%': '#94a3b8',
+}};
+const FIB_TREND_LINE = {{
+  color: 'rgba(148,163,184,0.75)',
+  width: 1,
+  dash: 'dot',
 }};
 const FIB_EXT_COLORS = {{
   '61.8%': '#a78bfa',
@@ -426,7 +433,10 @@ const FIB_EXT_COLORS = {{
 }};
 const FIB_RET_KEYS = new Set(['38.2%', '50%', '61.8%']);
 const FIB_EXT_KEYS = new Set(['127.2%', '161.8%', '200%']);
-const FIB_RET_RATIOS = [[0, '0%'], [0.382, '38.2%'], [0.5, '50%'], [0.618, '61.8%'], [1, '100%']];
+const FIB_RET_RATIOS = [
+  [0, '0%'], [0.236, '23.6%'], [0.382, '38.2%'], [0.5, '50%'],
+  [0.618, '61.8%'], [0.786, '78.6%'], [1, '100%'],
+];
 const FIB_EXT_RATIOS = [[0.618, '61.8%'], [1, '100%'], [1.272, '127.2%'], [1.618, '161.8%'], [2, '200%'], [2.618, '261.8%']];
 (function prepareFibManualLayout() {{
   const el = document.getElementById('fib-config');
@@ -560,32 +570,14 @@ function nearestBar(x) {{
   return bestBar;
 }}
 
-function snapAnchorPrice(rawY, bar) {{
-  const yax = gd._fullLayout?.yaxis;
-  const candidates = [bar.high, bar.low, bar.close, bar.open].filter(
-    (p) => p !== null && p !== undefined && Number.isFinite(p),
-  );
-  if (yax && candidates.length) {{
-    const rawPx = yax.d2p(rawY);
-    let bestPrice = null;
-    let bestPx = 14;
-    for (const price of candidates) {{
-      const pxDist = Math.abs(rawPx - yax.d2p(price));
-      if (pxDist < bestPx) {{
-        bestPx = pxDist;
-        bestPrice = price;
-      }}
-    }}
-    if (bestPrice !== null) return bestPrice;
-  }}
-  return Math.round(rawY);
-}}
-
 function snapAnchor(x, y) {{
   const adjX = x + (dragGrabOffset?.barShift || 0);
   const adjY = y + (dragGrabOffset?.priceShift || 0);
   const bar = nearestBar(adjX);
-  return {{ barIndex: bar.index, price: snapAnchorPrice(adjY, bar) }};
+  return {{
+    barIndex: bar.index,
+    price: Math.round(adjY * 100) / 100,
+  }};
 }}
 
 function dbgLog(location, message, data, hypothesisId) {{
@@ -684,12 +676,12 @@ function updateAnchorTrace() {{
 function computeRetracementLevels() {{
   const low = fibConfig.anchors.find((a) => a.role === 'low');
   const high = fibConfig.anchors.find((a) => a.role === 'high');
-  if (!low || !high || high.price <= low.price) return null;
-  const upTrend = low.barIndex < high.barIndex;
-  const range = high.price - low.price;
+  if (!low || !high) return null;
+  const price0 = low.price;
+  const price1 = high.price;
   return FIB_RET_RATIOS.map(([ratio, label]) => ({{
     label,
-    price: upTrend ? high.price - ratio * range : low.price + ratio * range,
+    price: price0 + ratio * (price1 - price0),
   }}));
 }}
 
@@ -697,46 +689,53 @@ function computeExtensionLevels() {{
   const a = fibConfig.anchors.find((x) => x.role === 'a');
   const b = fibConfig.anchors.find((x) => x.role === 'b');
   const c = fibConfig.anchors.find((x) => x.role === 'c');
-  if (!a || !b || !c) {{
-    dbgLog('interactive_chart.js:computeExtensionLevels', 'missing anchors', {{
-      runId: 'ext-fix',
-      hasA: Boolean(a),
-      hasB: Boolean(b),
-      hasC: Boolean(c),
-    }}, 'H8');
-    return null;
-  }}
-  const upTrend = a.barIndex < b.barIndex;
-  if (upTrend) {{
-    if (b.price <= a.price || c.price >= b.price || c.price <= a.price) {{
-      dbgLog('interactive_chart.js:computeExtensionLevels', 'uptrend invalid', {{
-        runId: 'ext-fix',
-        a: a.price,
-        b: b.price,
-        c: c.price,
-      }}, 'H8');
-      return null;
-    }}
-    const impulse = b.price - a.price;
-    return FIB_EXT_RATIOS.map(([ratio, label]) => ({{
-      label,
-      price: c.price + ratio * impulse,
-    }}));
-  }}
-  if (b.price >= a.price || c.price <= b.price || c.price >= a.price) {{
-    dbgLog('interactive_chart.js:computeExtensionLevels', 'downtrend invalid', {{
-      runId: 'ext-fix',
-      a: a.price,
-      b: b.price,
-      c: c.price,
-    }}, 'H8');
-    return null;
-  }}
-  const impulse = a.price - b.price;
+  if (!a || !b || !c) return null;
+  const impulse = b.price - a.price;
   return FIB_EXT_RATIOS.map(([ratio, label]) => ({{
     label,
-    price: c.price - ratio * impulse,
+    price: c.price + ratio * impulse,
   }}));
+}}
+
+function buildFibTrendShapes() {{
+  const shapes = [];
+  if (fibConfig.mode === 'extension') {{
+    const a = fibConfig.anchors.find((x) => x.role === 'a');
+    const b = fibConfig.anchors.find((x) => x.role === 'b');
+    const c = fibConfig.anchors.find((x) => x.role === 'c');
+    if (a && b) {{
+      shapes.push({{
+        type: 'line', xref: 'x', yref: 'y',
+        x0: a.barIndex, y0: a.price, x1: b.barIndex, y1: b.price,
+        line: FIB_TREND_LINE, layer: 'below',
+      }});
+    }}
+    if (b && c) {{
+      shapes.push({{
+        type: 'line', xref: 'x', yref: 'y',
+        x0: b.barIndex, y0: b.price, x1: c.barIndex, y1: c.price,
+        line: FIB_TREND_LINE, layer: 'below',
+      }});
+    }}
+    return shapes;
+  }}
+  const low = fibConfig.anchors.find((a) => a.role === 'low');
+  const high = fibConfig.anchors.find((a) => a.role === 'high');
+  if (low && high) {{
+    shapes.push({{
+      type: 'line', xref: 'x', yref: 'y',
+      x0: low.barIndex, y0: low.price, x1: high.barIndex, y1: high.price,
+      line: FIB_TREND_LINE, layer: 'below',
+    }});
+  }}
+  return shapes;
+}}
+
+function fibLevelXRange() {{
+  const anchorXs = fibConfig.anchors.map((a) => a.barIndex);
+  const x0 = Math.min(...anchorXs);
+  const x1 = fibConfig.bars[fibConfig.bars.length - 1].x;
+  return {{ x0, x1 }};
 }}
 
 function renderFibOverlay() {{
@@ -746,9 +745,8 @@ function renderFibOverlay() {{
     : computeRetracementLevels();
   const colors = fibConfig.mode === 'extension' ? FIB_EXT_COLORS : FIB_RET_COLORS;
   const keyLevels = fibConfig.mode === 'extension' ? FIB_EXT_KEYS : FIB_RET_KEYS;
-  const x0 = fibConfig.bars[0].x;
-  const x1 = fibConfig.bars[fibConfig.bars.length - 1].x;
-  fibShapes = [];
+  const {{ x0, x1 }} = fibLevelXRange();
+  fibShapes = buildFibTrendShapes();
   fibLevelAnnotations = [];
   dbgLog('interactive_chart.js:renderFibOverlay', 'levels computed', {{
     runId: 'ext-fix',
