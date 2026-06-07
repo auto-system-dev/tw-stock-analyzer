@@ -87,6 +87,44 @@ def _chart_html(
     color: #a78bfa;
     margin-bottom: 4px;
     padding: 0 2px;
+  }
+  #chart-wrap {
+    position: relative;
+  }
+  #fib-anchor-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 20;
+    overflow: visible;
+  }
+  .fib-anchor-handle {
+    position: absolute;
+    width: 32px;
+    height: 32px;
+    margin: 0;
+    padding: 0;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    background: #fbbf24;
+    color: #1e293b;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    pointer-events: auto;
+    user-select: none;
+    touch-action: none;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  }
+  .fib-anchor-handle:active {
+    cursor: grabbing;
   }"""
         fib_hint_html = (
             '<div id="fib-hint">手動模式：拖動圖上錨點（低/高 或 A/B/C）即時更新斐波那契線</div>'
@@ -281,7 +319,7 @@ const baseAnnotations = (figObj.layout.annotations || []).slice();
 let fibShapes = [];
 let fibLevelAnnotations = [];
 let fibConfig = null;
-let fibAnchorTraceIndex = null;
+let fibAnchorLayer = null;
 let draggingAnchorId = null;
 let suppressCrosshair = false;
 let lockedYRange = null;
@@ -306,8 +344,6 @@ const FIB_RET_KEYS = new Set(['38.2%', '50%', '61.8%']);
 const FIB_EXT_KEYS = new Set(['127.2%', '161.8%', '200%']);
 const FIB_RET_RATIOS = [[0, '0%'], [0.382, '38.2%'], [0.5, '50%'], [0.618, '61.8%'], [1, '100%']];
 const FIB_EXT_RATIOS = [[0.618, '61.8%'], [1, '100%'], [1.272, '127.2%'], [1.618, '161.8%'], [2, '200%'], [2.618, '261.8%']];
-const ANCHOR_HIT_RADIUS = 32;
-
 (function prepareFibManualLayout() {{
   const el = document.getElementById('fib-config');
   if (!el) return;
@@ -326,17 +362,14 @@ Plotly.newPlot(gd, figObj.data, figObj.layout, {{
   displaylogo: false,
   modeBarButtonsToRemove: ['lasso2d', 'select2d'],
 }}).then(() => {{
-  if (hasFibManual) {{
-    lockedYRange = computePriceYRange();
-    if (lockedYRange) {{
-      Plotly.relayout(gd, {{
-        dragmode: false,
-        'yaxis.autorange': false,
-        'yaxis.range': lockedYRange,
-      }});
-    }}
+  if (!hasFibManual) return;
+  lockedYRange = computePriceYRange();
+  const relayoutPatch = {{ dragmode: false }};
+  if (lockedYRange) {{
+    relayoutPatch['yaxis.autorange'] = false;
+    relayoutPatch['yaxis.range'] = lockedYRange;
   }}
-  initFibInteractive();
+  return Plotly.relayout(gd, relayoutPatch).then(() => initFibInteractive());
 }});
 
 renderBar(dataMap[defaultKey]);
@@ -385,15 +418,6 @@ function isInPricePanel(evt) {{
   return yPx >= yax._offset && yPx <= yax._offset + yax._length;
 }}
 
-function anchorClientPos(anchor) {{
-  const bb = gd.getBoundingClientRect();
-  const fl = gd._fullLayout;
-  return {{
-    x: bb.left + fl.xaxis.d2p(anchor.barIndex),
-    y: bb.top + fl.yaxis.d2p(anchor.price),
-  }};
-}}
-
 function snapAnchor(x, y) {{
   let bestBar = fibConfig.bars[0];
   let bestDist = Infinity;
@@ -410,28 +434,52 @@ function snapAnchor(x, y) {{
   return {{ barIndex: bestBar.index, price }};
 }}
 
-function findAnchorAt(evt) {{
-  if (!fibConfig || !gd._fullLayout) return null;
-  if (window.Plotly && Plotly.Fx && Plotly.Fx.hover) {{
-    const items = Plotly.Fx.hover(gd, evt);
-    if (items && items.length) {{
-      for (const item of items) {{
-        if (item.trace && item.trace.name === '_fib_anchors') {{
-          const idx = item.pointNumber;
-          if (idx >= 0 && idx < fibConfig.anchors.length) {{
-            return fibConfig.anchors[idx];
-          }}
-        }}
-      }}
-    }}
+function ensureAnchorLayer() {{
+  if (fibAnchorLayer) return fibAnchorLayer;
+  let wrap = document.getElementById('chart-wrap');
+  if (!wrap) {{
+    wrap = document.createElement('div');
+    wrap.id = 'chart-wrap';
+    gd.parentNode.insertBefore(wrap, gd);
+    wrap.appendChild(gd);
   }}
+  fibAnchorLayer = document.createElement('div');
+  fibAnchorLayer.id = 'fib-anchor-layer';
+  wrap.appendChild(fibAnchorLayer);
+  return fibAnchorLayer;
+}}
+
+function renderAnchorHandles() {{
+  const layer = ensureAnchorLayer();
+  layer.innerHTML = '';
+  if (!fibConfig || !gd._fullLayout) return;
+  const fl = gd._fullLayout;
+  const handleSize = 32;
+  const half = handleSize / 2;
   for (const anchor of fibConfig.anchors) {{
-    const pos = anchorClientPos(anchor);
-    const dx = evt.clientX - pos.x;
-    const dy = evt.clientY - pos.y;
-    if (Math.hypot(dx, dy) < ANCHOR_HIT_RADIUS) return anchor;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'fib-anchor-handle';
+    btn.textContent = anchor.label;
+    btn.dataset.id = anchor.id;
+    btn.style.left = `${{fl.xaxis.d2p(anchor.barIndex) - half}}px`;
+    btn.style.top = `${{fl.yaxis.d2p(anchor.price) - half}}px`;
+    btn.addEventListener('mousedown', (evt) => {{
+      draggingAnchorId = anchor.id;
+      suppressCrosshair = true;
+      clearCrosshair();
+      evt.preventDefault();
+      evt.stopPropagation();
+    }});
+    btn.addEventListener('touchstart', (evt) => {{
+      if (!evt.touches || !evt.touches.length) return;
+      draggingAnchorId = anchor.id;
+      suppressCrosshair = true;
+      clearCrosshair();
+      evt.preventDefault();
+    }}, {{ passive: false }});
+    layer.appendChild(btn);
   }}
-  return null;
 }}
 
 function computeRetracementLevels() {{
@@ -523,28 +571,6 @@ function renderFibOverlay() {{
   }});
 }}
 
-function updateAnchorMarkers() {{
-  if (fibAnchorTraceIndex === null || !fibConfig) return;
-  Plotly.restyle(gd, {{
-    x: [fibConfig.anchors.map((a) => a.barIndex)],
-    y: [fibConfig.anchors.map((a) => a.price)],
-    text: [fibConfig.anchors.map((a) => a.label)],
-  }}, [fibAnchorTraceIndex]);
-}}
-
-function onFibPointerDown(evt) {{
-  if (!fibConfig) return;
-  const anchor = findAnchorAt(evt);
-  if (!anchor) return;
-  draggingAnchorId = anchor.id;
-  suppressCrosshair = true;
-  clearCrosshair();
-  Plotly.relayout(gd, {{ dragmode: false }});
-  gd.style.cursor = 'grabbing';
-  evt.preventDefault();
-  evt.stopPropagation();
-}}
-
 function onFibPointerMove(evt) {{
   if (draggingAnchorId && fibConfig) {{
     const {{ x, y }} = getPlotCoords(evt);
@@ -553,17 +579,11 @@ function onFibPointerMove(evt) {{
     if (!anchor) return;
     anchor.barIndex = snapped.barIndex;
     anchor.price = snapped.price;
-    updateAnchorMarkers();
+    renderAnchorHandles();
     renderFibOverlay();
     return;
   }}
-  if (!hasFibManual || suppressCrosshair) return;
-  if (findAnchorAt(evt)) {{
-    gd.style.cursor = 'grab';
-  }} else if (!draggingAnchorId) {{
-    gd.style.cursor = '';
-  }}
-  if (!isInPricePanel(evt)) return;
+  if (!hasFibManual || suppressCrosshair || !isInPricePanel(evt)) return;
   const {{ x }} = getPlotCoords(evt);
   showPoint(x);
 }}
@@ -571,7 +591,6 @@ function onFibPointerMove(evt) {{
 function onFibPointerUp() {{
   draggingAnchorId = null;
   suppressCrosshair = false;
-  gd.style.cursor = '';
 }}
 
 function initFibInteractive() {{
@@ -580,34 +599,14 @@ function initFibInteractive() {{
   fibConfig = JSON.parse(el.textContent);
   if (!fibConfig.enabled) return;
 
-  Plotly.addTraces(gd, [{{
-    x: fibConfig.anchors.map((a) => a.barIndex),
-    y: fibConfig.anchors.map((a) => a.price),
-    xaxis: 'x',
-    yaxis: 'y',
-    mode: 'markers+text',
-    text: fibConfig.anchors.map((a) => a.label),
-    textposition: 'top center',
-    textfont: {{ color: '#fbbf24', size: 11 }},
-    marker: {{
-      size: 18,
-      color: '#fbbf24',
-      symbol: 'circle',
-      line: {{ color: '#ffffff', width: 2 }},
-    }},
-    name: '_fib_anchors',
-    hoverinfo: 'skip',
-    showlegend: false,
-  }}]).then(() => {{
-    fibAnchorTraceIndex = gd.data.length - 1;
-    renderFibOverlay();
-    gd.addEventListener('mousedown', onFibPointerDown, true);
-    gd.addEventListener('touchstart', (evt) => {{
-      if (!evt.touches || !evt.touches.length) return;
-      onFibPointerDown(evt.touches[0]);
-    }}, {{ capture: true, passive: false }});
+  requestAnimationFrame(() => {{
+    requestAnimationFrame(() => {{
+      renderAnchorHandles();
+      renderFibOverlay();
+    }});
   }});
 
+  gd.addEventListener('mousemove', onFibPointerMove);
   window.addEventListener('mousemove', onFibPointerMove);
   window.addEventListener('mouseup', onFibPointerUp);
   window.addEventListener('touchmove', (evt) => {{
@@ -617,7 +616,10 @@ function initFibInteractive() {{
   window.addEventListener('touchend', onFibPointerUp);
 }}
 
-window.addEventListener('resize', () => Plotly.Plots.resize(gd));
+window.addEventListener('resize', () => {{
+  Plotly.Plots.resize(gd);
+  if (fibConfig && fibConfig.enabled) renderAnchorHandles();
+}});
 </script>
 </body>
 </html>"""
