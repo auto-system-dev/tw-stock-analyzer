@@ -260,20 +260,42 @@ function activeShapes() {{
   return baseShapes.concat(fibShapes);
 }}
 
-function computePriceYRange(levels) {{
+function ohlcPriceBounds() {{
   let ymin = Infinity;
   let ymax = -Infinity;
   for (const d of Object.values(dataMap)) {{
     if (d.low != null) ymin = Math.min(ymin, d.low);
     if (d.high != null) ymax = Math.max(ymax, d.high);
   }}
+  if (!Number.isFinite(ymin) || !Number.isFinite(ymax)) return null;
+  const span = ymax - ymin;
+  const padBelow = Math.max(span * 0.12, 30);
+  const padAbove = Math.max(span * 0.45, 80);
+  return {{ ymin, ymax, floor: ymin - padBelow, ceil: ymax + padAbove }};
+}}
+
+function clampAnchorPrice(price) {{
+  const bounds = ohlcPriceBounds();
+  if (!bounds) return Math.round(price * 100) / 100;
+  const clamped = Math.max(bounds.floor, Math.min(bounds.ceil, price));
+  return Math.round(clamped * 100) / 100;
+}}
+
+function computePriceYRange(levels) {{
+  const bounds = ohlcPriceBounds();
+  if (!bounds) return null;
+  let ymin = bounds.ymin;
+  let ymax = bounds.ymax;
   if (levels) {{
     for (const level of levels) {{
-      ymin = Math.min(ymin, level.price);
-      ymax = Math.max(ymax, level.price);
+      if (level.price >= bounds.floor && level.price <= bounds.ceil) {{
+        ymin = Math.min(ymin, level.price);
+        ymax = Math.max(ymax, level.price);
+      }}
     }}
   }}
-  if (!Number.isFinite(ymin) || !Number.isFinite(ymax)) return null;
+  ymin = Math.max(ymin, bounds.floor);
+  ymax = Math.min(ymax, bounds.ceil);
   const pad = Math.max((ymax - ymin) * 0.06, 20);
   return [ymin - pad, ymax + pad];
 }}
@@ -535,12 +557,26 @@ gd.on('plotly_unhover', () => {{
   renderBar(dataMap[defaultKey]);
 }});
 
-function getPlotCoords(evt) {{
+function clampPointerToPricePanel(pointerPx, pointerPy) {{
+  const yax = gd._fullLayout?.yaxis;
+  if (!yax) return {{ pointerPx, pointerPy }};
+  return {{
+    pointerPx,
+    pointerPy: Math.max(yax._offset, Math.min(yax._offset + yax._length, pointerPy)),
+  }};
+}}
+
+function getPlotCoords(evt, clampY) {{
   const bb = gd.getBoundingClientRect();
   const fl = gd._fullLayout;
   if (!fl || !fl.xaxis || !fl.yaxis) return {{ x: 0, y: 0, pointerPx: 0, pointerPy: 0 }};
-  const pointerPx = evt.clientX - bb.left;
-  const pointerPy = evt.clientY - bb.top;
+  let pointerPx = evt.clientX - bb.left;
+  let pointerPy = evt.clientY - bb.top;
+  if (clampY) {{
+    const clamped = clampPointerToPricePanel(pointerPx, pointerPy);
+    pointerPx = clamped.pointerPx;
+    pointerPy = clamped.pointerPy;
+  }}
   return {{
     x: fl.xaxis.p2d(pointerPx),
     y: fl.yaxis.p2d(pointerPy),
@@ -576,7 +612,7 @@ function snapAnchor(x, y) {{
   const bar = nearestBar(adjX);
   return {{
     barIndex: bar.index,
-    price: Math.round(adjY * 100) / 100,
+    price: clampAnchorPrice(adjY),
   }};
 }}
 
@@ -802,7 +838,7 @@ function renderFibOverlay() {{
 
 function onFibPointerMove(evt) {{
   if (draggingAnchorId && fibConfig) {{
-    const {{ x, y }} = getPlotCoords(evt);
+    const {{ x, y }} = getPlotCoords(evt, true);
     const snapped = snapAnchor(x, y);
     const anchor = fibConfig.anchors.find((a) => a.id === draggingAnchorId);
     if (!anchor) return;
@@ -813,12 +849,13 @@ function onFibPointerMove(evt) {{
     renderFibOverlay();
     setAnchorHoverUI(false, true);
     dbgLog('interactive_chart.js:drag-move', 'anchor repositioned', {{
-      runId: 'drag-precision',
+      runId: 'drag-bounds-fix',
       anchorId: anchor.id,
       before,
       after: snapped,
       pointerY: y,
-    }}, 'H12,H13');
+      bounds: ohlcPriceBounds(),
+    }}, 'H14,H15');
     return;
   }}
   if (!hasFibManual || suppressCrosshair) return;
@@ -846,7 +883,7 @@ function onFibPointerDown(evt) {{
   if (!fibConfig) return;
   const anchor = findAnchorAtPointer(evt);
   if (!anchor) return;
-  const {{ x, y }} = getPlotCoords(evt);
+  const {{ x, y }} = getPlotCoords(evt, true);
   dragGrabOffset = {{
     barShift: anchor.barIndex - x,
     priceShift: anchor.price - y,
@@ -883,6 +920,9 @@ function initFibInteractive() {{
   if (!el) return;
   fibConfig = JSON.parse(el.textContent);
   if (!fibConfig.enabled) return;
+  for (const anchor of fibConfig.anchors) {{
+    anchor.price = clampAnchorPrice(anchor.price);
+  }}
 
   Plotly.addTraces(gd, [{{
     type: 'scatter',
