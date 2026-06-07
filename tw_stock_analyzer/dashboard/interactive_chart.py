@@ -123,7 +123,7 @@ def _chart_html(
     cursor: grabbing !important;
   }"""
         fib_hint_html = (
-            '<div id="fib-hint">手動模式：移到手黃點上按住拖動（低/高 或 A/B/C）</div>'
+            '<div id="fib-hint">手動模式：拖動黃點調整錨點（X 對齊 K 線 · Y 自由定價，靠近 OHLC 會吸附）</div>'
         )
     return f"""<!DOCTYPE html>
 <html>
@@ -404,6 +404,7 @@ let fibLevelAnnotations = [];
 let fibConfig = null;
 let fibAnchorTraceIndex = null;
 let draggingAnchorId = null;
+let dragGrabOffset = null;
 let suppressCrosshair = false;
 let lockedYRange = null;
 let hasFibManual = false;
@@ -546,7 +547,7 @@ function isInPricePanel(evt) {{
   return yPx >= yax._offset && yPx <= yax._offset + yax._length;
 }}
 
-function snapAnchor(x, y) {{
+function nearestBar(x) {{
   let bestBar = fibConfig.bars[0];
   let bestDist = Infinity;
   for (const bar of fibConfig.bars) {{
@@ -556,10 +557,35 @@ function snapAnchor(x, y) {{
       bestBar = bar;
     }}
   }}
-  const price = Math.abs(y - bestBar.high) <= Math.abs(y - bestBar.low)
-    ? bestBar.high
-    : bestBar.low;
-  return {{ barIndex: bestBar.index, price }};
+  return bestBar;
+}}
+
+function snapAnchorPrice(rawY, bar) {{
+  const yax = gd._fullLayout?.yaxis;
+  const candidates = [bar.high, bar.low, bar.close, bar.open].filter(
+    (p) => p !== null && p !== undefined && Number.isFinite(p),
+  );
+  if (yax && candidates.length) {{
+    const rawPx = yax.d2p(rawY);
+    let bestPrice = null;
+    let bestPx = 14;
+    for (const price of candidates) {{
+      const pxDist = Math.abs(rawPx - yax.d2p(price));
+      if (pxDist < bestPx) {{
+        bestPx = pxDist;
+        bestPrice = price;
+      }}
+    }}
+    if (bestPrice !== null) return bestPrice;
+  }}
+  return Math.round(rawY);
+}}
+
+function snapAnchor(x, y) {{
+  const adjX = x + (dragGrabOffset?.barShift || 0);
+  const adjY = y + (dragGrabOffset?.priceShift || 0);
+  const bar = nearestBar(adjX);
+  return {{ barIndex: bar.index, price: snapAnchorPrice(adjY, bar) }};
 }}
 
 function dbgLog(location, message, data, hypothesisId) {{
@@ -579,7 +605,7 @@ function dbgLog(location, message, data, hypothesisId) {{
   // #endregion
 }}
 
-const ANCHOR_HIT_PX = 40;
+const ANCHOR_HIT_PX = 52;
 
 let lastAnchorHoverState = '';
 
@@ -782,11 +808,19 @@ function onFibPointerMove(evt) {{
     const snapped = snapAnchor(x, y);
     const anchor = fibConfig.anchors.find((a) => a.id === draggingAnchorId);
     if (!anchor) return;
+    const before = {{ barIndex: anchor.barIndex, price: anchor.price }};
     anchor.barIndex = snapped.barIndex;
     anchor.price = snapped.price;
     updateAnchorTrace();
     renderFibOverlay();
     setAnchorHoverUI(false, true);
+    dbgLog('interactive_chart.js:drag-move', 'anchor repositioned', {{
+      runId: 'drag-precision',
+      anchorId: anchor.id,
+      before,
+      after: snapped,
+      pointerY: y,
+    }}, 'H12,H13');
     return;
   }}
   if (!hasFibManual || suppressCrosshair) return;
@@ -814,21 +848,34 @@ function onFibPointerDown(evt) {{
   if (!fibConfig) return;
   const anchor = findAnchorAtPointer(evt);
   if (!anchor) return;
+  const {{ x, y }} = getPlotCoords(evt);
+  dragGrabOffset = {{
+    barShift: anchor.barIndex - x,
+    priceShift: anchor.price - y,
+  }};
   draggingAnchorId = anchor.id;
   suppressCrosshair = true;
   clearCrosshair();
   setAnchorHoverUI(false, true);
+  if (evt.pointerId !== undefined) {{
+    try {{ gd.setPointerCapture(evt.pointerId); }} catch (err) {{}}
+  }}
   dbgLog('interactive_chart.js:pointerdown', 'anchor drag started', {{
-    runId: 'cursor-fix',
+    runId: 'drag-precision',
     anchorId: anchor.id,
     method: findAnchorNearPixel(evt) ? 'pixel' : 'fx',
-  }}, 'H7');
+    grabOffset: dragGrabOffset,
+  }}, 'H12,H13');
   evt.preventDefault();
   evt.stopPropagation();
 }}
 
-function onFibPointerUp() {{
+function onFibPointerUp(evt) {{
+  if (evt?.pointerId !== undefined) {{
+    try {{ gd.releasePointerCapture(evt.pointerId); }} catch (err) {{}}
+  }}
   draggingAnchorId = null;
+  dragGrabOffset = null;
   suppressCrosshair = false;
   setAnchorHoverUI(false, false);
 }}
@@ -850,7 +897,7 @@ function initFibInteractive() {{
     textposition: 'middle center',
     textfont: {{ color: '#1e293b', size: 12 }},
     marker: {{
-      size: 28,
+      size: 34,
       color: '#fbbf24',
       symbol: 'circle',
       line: {{ color: '#ffffff', width: 2 }},

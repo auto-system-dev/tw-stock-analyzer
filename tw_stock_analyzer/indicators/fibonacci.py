@@ -209,8 +209,10 @@ def build_fib_anchor_config(
             {
                 "index": i,
                 "x": x,
+                "open": float(row["open"]),
                 "high": float(row["high"]),
                 "low": float(row["low"]),
+                "close": float(row["close"]),
             }
         )
 
