@@ -18,7 +18,7 @@ from tw_stock_analyzer.indicators.chart_timeframe import (
     chart_volume_lots,
     format_chart_index,
 )
-from tw_stock_analyzer.indicators.fibonacci import FibonacciRetracement
+from tw_stock_analyzer.indicators.fibonacci import FibOverlay
 
 
 def _num(value: Any) -> float | None:
@@ -272,7 +272,7 @@ def render_interactive_chart(
     df: pd.DataFrame,
     title: str,
     *,
-    fib: FibonacciRetracement | None = None,
+    fib: FibOverlay | None = None,
     spec: ChartTimeframeSpec | None = None,
     fib_unit: str = "日",
 ) -> None:

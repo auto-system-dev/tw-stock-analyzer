@@ -8,7 +8,11 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from tw_stock_analyzer.indicators.fibonacci import FibonacciRetracement
+from tw_stock_analyzer.indicators.fibonacci import (
+    FibonacciExtension,
+    FibonacciRetracement,
+    FibOverlay,
+)
 from tw_stock_analyzer.indicators.chart_timeframe import (
     ChartTimeframeSpec,
     TIMEFRAME_SPECS,
@@ -79,11 +83,40 @@ FIB_LINE_COLORS = {
     "100%": "#94a3b8",
 }
 
+FIB_EXTENSION_LINE_COLORS = {
+    "61.8%": "#a78bfa",
+    "100%": "#8b5cf6",
+    "127.2%": "#7c3aed",
+    "161.8%": "#6d28d9",
+    "200%": "#5b21b6",
+    "261.8%": "#4c1d95",
+}
+
+FIB_EXTENSION_KEY_LEVELS = frozenset({"127.2%", "161.8%", "200%"})
+
+
+def _fib_line_colors(fib: FibOverlay) -> dict[str, str]:
+    if isinstance(fib, FibonacciExtension):
+        return FIB_EXTENSION_LINE_COLORS
+    return FIB_LINE_COLORS
+
+
+def _fib_key_levels(fib: FibOverlay) -> frozenset[str]:
+    if isinstance(fib, FibonacciExtension):
+        return FIB_EXTENSION_KEY_LEVELS
+    return frozenset({"38.2%", "50%", "61.8%"})
+
+
+def _fib_hover_prefix(fib: FibOverlay) -> str:
+    if isinstance(fib, FibonacciExtension):
+        return "Fib 擴展"
+    return "Fib"
+
 
 def _add_fibonacci_levels(
     fig: go.Figure,
     df: pd.DataFrame,
-    fib: FibonacciRetracement,
+    fib: FibOverlay,
     x_coords: list,
     *,
     row: int = 1,
@@ -92,21 +125,26 @@ def _add_fibonacci_levels(
 ) -> None:
     """繪製 Fib 水平線；標籤放圖表右側，不佔用頂部圖例。"""
     x_start, x_end = x_coords[0], x_coords[-1]
+    line_colors = _fib_line_colors(fib)
+    key_levels = _fib_key_levels(fib)
+    hover_prefix = _fib_hover_prefix(fib)
     for level in fib.levels:
-        color = FIB_LINE_COLORS.get(level.label, "#eab308")
-        width = 1.8 if level.label in {"38.2%", "50%", "61.8%"} else 1.0
+        color = line_colors.get(level.label, "#eab308")
+        width = 1.8 if level.label in key_levels else 1.0
         trace_kwargs: dict = dict(
             x=[x_start, x_end],
             y=[level.price, level.price],
             mode="lines",
             line=dict(color=color, width=width, dash="dash"),
-            opacity=0.9 if level.label in {"38.2%", "50%", "61.8%"} else 0.65,
+            opacity=0.9 if level.label in key_levels else 0.65,
             showlegend=False,
         )
         if hover_info == "skip":
             trace_kwargs["hoverinfo"] = "skip"
         else:
-            trace_kwargs["hovertemplate"] = f"Fib {level.label}: %{{y:,.2f}}<extra></extra>"
+            trace_kwargs["hovertemplate"] = (
+                f"{hover_prefix} {level.label}: %{{y:,.2f}}<extra></extra>"
+            )
         fig.add_trace(go.Scatter(**trace_kwargs), row=row, col=col)
 
         fig.add_annotation(
@@ -129,7 +167,7 @@ def _add_fibonacci_levels(
 def _add_fibonacci_lines(
     fig: go.Figure,
     df: pd.DataFrame,
-    fib: FibonacciRetracement,
+    fib: FibOverlay,
     x_coords: list,
 ) -> None:
     _add_fibonacci_levels(fig, df, fib, x_coords, hover_info="hover")
@@ -230,7 +268,7 @@ def build_combined_chart(
     df: pd.DataFrame,
     title: str,
     *,
-    fib: FibonacciRetracement | None = None,
+    fib: FibOverlay | None = None,
     spec: ChartTimeframeSpec | None = None,
     fib_unit: str = "日",
 ) -> go.Figure:
@@ -369,11 +407,11 @@ def build_price_chart(
     df: pd.DataFrame,
     title: str,
     *,
-    fib: FibonacciRetracement | None = None,
+    fib: FibOverlay | None = None,
     spec: ChartTimeframeSpec | None = None,
     fib_unit: str = "日",
 ) -> go.Figure:
-    """K 線 + 均線 + 布林通道，可選斐波那契回撤。"""
+    """K 線 + 均線 + 布林通道，可選斐波那契回撤或擴展。"""
     chart_spec = spec or TIMEFRAME_SPECS["日線"]
     xaxis = _build_chart_xaxis(df, chart_spec)
     x_coords = xaxis.coords

@@ -26,7 +26,13 @@ from tw_stock_analyzer.indicators.chart_timeframe import (
     prepare_chart_data,
     slice_chart_display_range,
 )
-from tw_stock_analyzer.indicators.fibonacci import compute_fibonacci_retracement
+from tw_stock_analyzer.indicators.fibonacci import (
+    FibonacciExtension,
+    FibonacciRetracement,
+    FibOverlay,
+    compute_fibonacci_extension,
+    compute_fibonacci_retracement,
+)
 
 # 分析報告結構版本；變更時清除舊 session 快取
 REPORT_CACHE_VERSION = 17
@@ -103,7 +109,7 @@ st.markdown(
 )
 
 
-def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, int]:
+def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, str, int]:
     if "symbol" not in st.session_state:
         st.session_state.symbol = "2330"
 
@@ -152,7 +158,7 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, int]:
             screen_opts["run"] = run_screen_btn
             st.divider()
             st.caption("日線：TWSE · 籌碼/營收：FinMind · 僅供研究參考")
-            return "", "", page, 5, False, False, screen_opts, False, 60
+            return "", "", page, 5, False, False, screen_opts, False, "retracement", 60
 
         st.markdown("**常用標的**")
         cols = st.columns(3)
@@ -168,9 +174,15 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, int]:
         )
         period_label = st.selectbox("歷史資料期間", list(PERIOD_OPTIONS.keys()), index=3)
         horizon_days = st.slider("預測天數", min_value=1, max_value=20, value=5)
-        show_fibonacci = st.checkbox("顯示斐波那契回撤", value=False)
+        show_fibonacci = st.checkbox("顯示斐波那契", value=False)
+        fib_mode = "retracement"
         fib_lookback = 60
         if show_fibonacci:
+            fib_mode = st.selectbox(
+                "斐波那契類型",
+                ["retracement", "extension"],
+                format_func=lambda x: "回撤" if x == "retracement" else "擴展",
+            )
             fib_lookback = st.selectbox(
                 "斐波那契波段天數",
                 [60, 120],
@@ -183,7 +195,18 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, int]:
         st.caption("日線：TWSE · 籌碼/營收：FinMind · 僅供研究參考")
 
     period = PERIOD_OPTIONS[period_label]
-    return symbol.strip(), period, page, horizon_days, analyze, run_bt, screen_opts, show_fibonacci, fib_lookback
+    return (
+        symbol.strip(),
+        period,
+        page,
+        horizon_days,
+        analyze,
+        run_bt,
+        screen_opts,
+        show_fibonacci,
+        fib_mode,
+        fib_lookback,
+    )
 
 
 def render_backtest(symbol: str, period: str, horizon_days: int) -> bool:
@@ -435,7 +458,18 @@ def main() -> None:
     if pending_analyze:
         st.session_state.page_mode = "單檔分析"
 
-    symbol, period, page, horizon_days, analyze, run_bt, screen_opts, show_fibonacci, fib_lookback = render_sidebar()
+    (
+        symbol,
+        period,
+        page,
+        horizon_days,
+        analyze,
+        run_bt,
+        screen_opts,
+        show_fibonacci,
+        fib_mode,
+        fib_lookback,
+    ) = render_sidebar()
 
     if page == "潛力股掃描":
         render_screener_page(screen_opts)
@@ -529,14 +563,16 @@ def main() -> None:
         display_df = slice_chart_display_range(chart_df, chart_range)
 
         fib_bars = fib_lookback_bars(chart_timeframe, fib_lookback)
-        fib = (
-            compute_fibonacci_retracement(display_df, lookback=fib_bars)
-            if show_fibonacci
-            else None
-        )
+        fib: FibOverlay | None = None
+        if show_fibonacci:
+            if fib_mode == "extension":
+                fib = compute_fibonacci_extension(display_df, lookback=fib_bars)
+            else:
+                fib = compute_fibonacci_retracement(display_df, lookback=fib_bars)
         if show_fibonacci and fib is None:
-            st.caption("資料不足，無法計算斐波那契回撤。")
-        elif show_fibonacci:
+            fib_label = "擴展" if fib_mode == "extension" else "回撤"
+            st.caption(f"資料不足，無法計算斐波那契{fib_label}。")
+        elif show_fibonacci and isinstance(fib, FibonacciRetracement):
             hi = format_chart_index(fib.swing_high_date, chart_spec)
             lo = format_chart_index(fib.swing_low_date, chart_spec)
             st.caption(
@@ -544,6 +580,24 @@ def main() -> None:
                 f"高 {fib.swing_high:,.2f}（{hi}）· "
                 f"低 {fib.swing_low:,.2f}（{lo}）"
             )
+        elif show_fibonacci and isinstance(fib, FibonacciExtension):
+            a = format_chart_index(fib.point_a_date, chart_spec)
+            b = format_chart_index(fib.point_b_date, chart_spec)
+            c = format_chart_index(fib.point_c_date, chart_spec)
+            if fib.trend == "上升":
+                st.caption(
+                    f"斐波那契擴展：{fib.trend}波段 · 近 {fib_bars} {chart_spec.fib_unit} · "
+                    f"A 低 {fib.point_a:,.2f}（{a}）· "
+                    f"B 高 {fib.point_b:,.2f}（{b}）· "
+                    f"C 回撤低 {fib.point_c:,.2f}（{c}）"
+                )
+            else:
+                st.caption(
+                    f"斐波那契擴展：{fib.trend}波段 · 近 {fib_bars} {chart_spec.fib_unit} · "
+                    f"A 高 {fib.point_a:,.2f}（{a}）· "
+                    f"B 低 {fib.point_b:,.2f}（{b}）· "
+                    f"C 反彈高 {fib.point_c:,.2f}（{c}）"
+                )
         render_interactive_chart(
             display_df,
             f"{report.name}（{report.symbol}）股價與均線",
