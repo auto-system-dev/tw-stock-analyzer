@@ -112,11 +112,18 @@ def _chart_html(
     margin-bottom: 4px;
     padding: 0 2px;
   }
-  #chart.fib-manual-drag .draglayer {{
-    cursor: inherit;
-  }}"""
+  #chart.fib-anchor-hover,
+  #chart.fib-anchor-hover .draglayer,
+  #chart.fib-anchor-hover .scatterlayer {
+    cursor: grab !important;
+  }
+  #chart.fib-anchor-grabbing,
+  #chart.fib-anchor-grabbing .draglayer,
+  #chart.fib-anchor-grabbing .scatterlayer {
+    cursor: grabbing !important;
+  }"""
         fib_hint_html = (
-            '<div id="fib-hint">手動模式：拖動圖上錨點（低/高 或 A/B/C）即時更新斐波那契線</div>'
+            '<div id="fib-hint">手動模式：移到手黃點上按住拖動（低/高 或 A/B/C）</div>'
         )
     return f"""<!DOCTYPE html>
 <html>
@@ -375,8 +382,7 @@ gd.on('plotly_hover', (event) => {{
   if (suppressCrosshair || draggingAnchorId) return;
   if (hasFibManual) {{
     const anchorPt = event.points?.find((p) => p.data?.name === '_fib_anchors');
-    gd.classList.toggle('fib-manual-drag', Boolean(anchorPt));
-    gd.style.cursor = anchorPt ? 'grab' : '';
+    if (anchorPt) setAnchorHoverUI(true, false);
     if (event.points?.length) {{
       const hoverPt = anchorPt || event.points[0];
       showPoint(hoverPt.x);
@@ -394,7 +400,7 @@ gd.on('plotly_click', (event) => {{
     draggingAnchorId = fibConfig.anchors[anchorPt.pointNumber].id;
     suppressCrosshair = true;
     clearCrosshair();
-    gd.style.cursor = 'grabbing';
+    setAnchorHoverUI(false, true);
     dbgLog('interactive_chart.js:plotly_click', 'anchor drag started via click', {{
       runId: 'drag-fix',
       anchorId: draggingAnchorId,
@@ -407,6 +413,7 @@ gd.on('plotly_click', (event) => {{
 
 gd.on('plotly_unhover', () => {{
   if (suppressCrosshair || draggingAnchorId) return;
+  if (hasFibManual) setAnchorHoverUI(false, false);
   clearCrosshair();
   renderBar(dataMap[defaultKey]);
 }});
@@ -462,7 +469,30 @@ function dbgLog(location, message, data, hypothesisId) {{
   // #endregion
 }}
 
-const ANCHOR_HIT_PX = 28;
+const ANCHOR_HIT_PX = 40;
+
+let lastAnchorHoverState = '';
+
+function setAnchorHoverUI(hover, grabbing) {{
+  const state = `${{Boolean(hover)}}-${{Boolean(grabbing)}}`;
+  gd.classList.toggle('fib-anchor-hover', Boolean(hover));
+  gd.classList.toggle('fib-anchor-grabbing', Boolean(grabbing));
+  const draglayer = gd.querySelector('.draglayer');
+  if (draglayer) {{
+    draglayer.style.pointerEvents = (hover || grabbing) ? 'none' : '';
+    draglayer.style.cursor = grabbing ? 'grabbing' : (hover ? 'grab' : '');
+  }}
+  if (state !== lastAnchorHoverState) {{
+    lastAnchorHoverState = state;
+    dbgLog('interactive_chart.js:setAnchorHoverUI', 'cursor state', {{
+      runId: 'cursor-fix',
+      hover,
+      grabbing,
+      draglayerFound: Boolean(draglayer),
+      draglayerPointerEvents: draglayer?.style.pointerEvents || '',
+    }}, 'H1,H4');
+  }}
+}}
 
 function findAnchorNearPixel(evt) {{
   if (!fibConfig || !gd._fullLayout) return null;
@@ -472,8 +502,8 @@ function findAnchorNearPixel(evt) {{
   let best = null;
   let bestDist = ANCHOR_HIT_PX;
   for (const anchor of fibConfig.anchors) {{
-    const px = bb.left + xax.d2p(anchor.barIndex);
-    const py = bb.top + yax.d2p(anchor.price);
+    const px = bb.left + xax._offset + xax.d2p(anchor.barIndex);
+    const py = bb.top + yax._offset + yax.d2p(anchor.price);
     const dist = Math.hypot(evt.clientX - px, evt.clientY - py);
     if (dist < bestDist) {{
       bestDist = dist;
@@ -614,21 +644,52 @@ function onFibPointerMove(evt) {{
     anchor.price = snapped.price;
     updateAnchorTrace();
     renderFibOverlay();
-    gd.style.cursor = 'grabbing';
+    setAnchorHoverUI(false, true);
     return;
   }}
   if (!hasFibManual || suppressCrosshair) return;
   const near = findAnchorNearPixel(evt);
-  gd.style.cursor = near ? 'grab' : '';
+  setAnchorHoverUI(Boolean(near), false);
+  if (near) {{
+    const xax = gd._fullLayout.xaxis;
+    const yax = gd._fullLayout.yaxis;
+    const bb = gd.getBoundingClientRect();
+    const anchor = near;
+    const px = bb.left + xax._offset + xax.d2p(anchor.barIndex);
+    const py = bb.top + yax._offset + yax.d2p(anchor.price);
+    dbgLog('interactive_chart.js:pointermove', 'anchor hover', {{
+      runId: 'cursor-fix',
+      anchorId: near.id,
+      dist: Math.hypot(evt.clientX - px, evt.clientY - py),
+      hitPx: ANCHOR_HIT_PX,
+    }}, 'H3,H7');
+  }}
   if (!isInPricePanel(evt)) return;
   const {{ x }} = getPlotCoords(evt);
   showPoint(x);
 }}
 
+function onFibPointerDown(evt) {{
+  if (!fibConfig) return;
+  const anchor = findAnchorAtPointer(evt);
+  if (!anchor) return;
+  draggingAnchorId = anchor.id;
+  suppressCrosshair = true;
+  clearCrosshair();
+  setAnchorHoverUI(false, true);
+  dbgLog('interactive_chart.js:pointerdown', 'anchor drag started', {{
+    runId: 'cursor-fix',
+    anchorId: anchor.id,
+    method: findAnchorNearPixel(evt) ? 'pixel' : 'fx',
+  }}, 'H7');
+  evt.preventDefault();
+  evt.stopPropagation();
+}}
+
 function onFibPointerUp() {{
   draggingAnchorId = null;
   suppressCrosshair = false;
-  gd.style.cursor = '';
+  setAnchorHoverUI(false, false);
 }}
 
 function initFibInteractive() {{
@@ -660,37 +721,22 @@ function initFibInteractive() {{
   }}]).then(() => {{
     fibAnchorTraceIndex = gd.data.length - 1;
     renderFibOverlay();
+    const draglayer = gd.querySelector('.draglayer');
     dbgLog('interactive_chart.js:initFibInteractive', 'anchor trace added', {{
-      runId: 'scatter-fix',
+      runId: 'cursor-fix',
       traceIndex: fibAnchorTraceIndex,
       anchors: fibConfig.anchors,
-    }}, 'H6');
+      draglayerFound: Boolean(draglayer),
+      xOffset: gd._fullLayout?.xaxis?._offset,
+      yOffset: gd._fullLayout?.yaxis?._offset,
+    }}, 'H1,H3,H6');
   }});
 
-  gd.addEventListener('mousedown', (evt) => {{
-    const anchor = findAnchorAtPointer(evt);
-    if (!anchor) return;
-    draggingAnchorId = anchor.id;
-    suppressCrosshair = true;
-    clearCrosshair();
-    gd.style.cursor = 'grabbing';
-    dbgLog('interactive_chart.js:mousedown', 'anchor drag started', {{
-      runId: 'drag-fix',
-      anchorId: anchor.id,
-      method: findAnchorNearPixel(evt) ? 'pixel' : 'fx',
-    }}, 'H2,H4');
-    evt.preventDefault();
-    evt.stopPropagation();
-  }}, true);
-
-  gd.addEventListener('mousemove', onFibPointerMove);
-  window.addEventListener('mousemove', onFibPointerMove);
-  window.addEventListener('mouseup', onFibPointerUp);
-  window.addEventListener('touchmove', (evt) => {{
-    if (!evt.touches || !evt.touches.length) return;
-    onFibPointerMove(evt.touches[0]);
-  }}, {{ passive: false }});
-  window.addEventListener('touchend', onFibPointerUp);
+  gd.addEventListener('pointerdown', onFibPointerDown, true);
+  gd.addEventListener('pointermove', onFibPointerMove, true);
+  window.addEventListener('pointermove', onFibPointerMove);
+  window.addEventListener('pointerup', onFibPointerUp);
+  window.addEventListener('pointercancel', onFibPointerUp);
 }}
 
 window.addEventListener('resize', () => {{
