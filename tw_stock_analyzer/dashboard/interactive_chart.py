@@ -123,7 +123,7 @@ def _chart_html(
     cursor: grabbing !important;
   }"""
         fib_hint_html = (
-            '<div id="fib-hint">手動模式：拖動黃點調整錨點（參考 TradingView · 兩點/三點自由定位 · 水平線向右延伸）</div>'
+            '<div id="fib-hint">手動模式：拖動黃點調整錨點（放開時吸附 K 線與 OHLC · 拖曳中即時預覽）</div>'
         )
     return f"""<!DOCTYPE html>
 <html>
@@ -513,7 +513,9 @@ function showPointAtPointer(evt, source) {{
 gd.on('plotly_hover', (event) => {{
   if (suppressCrosshair || draggingAnchorId) return;
   if (hasFibManual) {{
-    const anchorPt = event.points?.find((p) => p.data?.name === '_fib_anchors');
+    const anchorPt = event.points?.find(
+      (p) => p.data?.name === '_fib_anchors' || p.data?.name === '_fib_anchor_hits',
+    );
     if (anchorPt) setAnchorHoverUI(true, false);
     if (event.points?.length) {{
       const hoverPt = anchorPt || event.points[0];
@@ -531,7 +533,9 @@ gd.on('plotly_hover', (event) => {{
 
 gd.on('plotly_click', (event) => {{
   if (!event.points?.length) return;
-  const anchorPt = event.points.find((p) => p.data?.name === '_fib_anchors');
+  const anchorPt = event.points.find(
+    (p) => p.data?.name === '_fib_anchors' || p.data?.name === '_fib_anchor_hits',
+  );
   if (anchorPt && fibConfig) {{
     draggingAnchorId = fibConfig.anchors[anchorPt.pointNumber].id;
     suppressCrosshair = true;
@@ -606,13 +610,39 @@ function nearestBar(x) {{
   return bestBar;
 }}
 
-function snapAnchor(x, y) {{
+function magnetAnchorPrice(rawY, bar) {{
+  const yax = gd._fullLayout?.yaxis;
+  const candidates = [bar.open, bar.high, bar.low, bar.close].filter(
+    (p) => p !== null && p !== undefined && Number.isFinite(p),
+  );
+  if (!yax || !candidates.length) return clampAnchorPrice(rawY);
+  const rawPx = yax.d2p(rawY);
+  let bestPrice = rawY;
+  let bestPx = 12;
+  for (const price of candidates) {{
+    const pxDist = Math.abs(rawPx - yax.d2p(price));
+    if (pxDist < bestPx) {{
+      bestPx = pxDist;
+      bestPrice = price;
+    }}
+  }}
+  return clampAnchorPrice(bestPrice);
+}}
+
+function snapAnchor(x, y, finalize) {{
   const adjX = x + (dragGrabOffset?.barShift || 0);
   const adjY = y + (dragGrabOffset?.priceShift || 0);
   const bar = nearestBar(adjX);
+  const maxX = fibConfig.bars.length - 1;
+  if (!finalize) {{
+    return {{
+      barIndex: Math.max(0, Math.min(maxX, adjX)),
+      price: magnetAnchorPrice(adjY, bar),
+    }};
+  }}
   return {{
     barIndex: bar.index,
-    price: clampAnchorPrice(adjY),
+    price: magnetAnchorPrice(adjY, bar),
   }};
 }}
 
@@ -633,7 +663,7 @@ function dbgLog(location, message, data, hypothesisId) {{
   // #endregion
 }}
 
-const ANCHOR_HIT_PX = 52;
+const ANCHOR_HIT_PX = 64;
 
 let lastAnchorHoverState = '';
 
@@ -684,7 +714,7 @@ function findAnchorAtPointer(evt) {{
   const items = Plotly.Fx.hover(gd, evt);
   if (!items?.length) return null;
   for (const item of items) {{
-    if (item.data?.name === '_fib_anchors') {{
+    if (item.data?.name === '_fib_anchor_hits' || item.data?.name === '_fib_anchors') {{
       const idx = item.pointNumber;
       if (idx >= 0 && idx < fibConfig.anchors.length) {{
         return fibConfig.anchors[idx];
@@ -696,11 +726,19 @@ function findAnchorAtPointer(evt) {{
 
 function updateAnchorTrace() {{
   if (fibAnchorTraceIndex === null || !fibConfig) return;
-  Plotly.restyle(gd, {{
-    x: [fibConfig.anchors.map((a) => a.barIndex)],
-    y: [fibConfig.anchors.map((a) => a.price)],
-    text: [fibConfig.anchors.map((a) => a.label)],
-  }}, [fibAnchorTraceIndex]);
+  const xs = fibConfig.anchors.map((a) => a.barIndex);
+  const ys = fibConfig.anchors.map((a) => a.price);
+  const hitIdx = fibAnchorTraceIndex - 1;
+  const patches = [
+    {{ x: [xs], y: [ys] }},
+    {{ x: [xs], y: [ys], text: [fibConfig.anchors.map((a) => a.label)] }},
+  ];
+  const indices = hitIdx >= 0 ? [hitIdx, fibAnchorTraceIndex] : [fibAnchorTraceIndex];
+  if (hitIdx >= 0) {{
+    Plotly.restyle(gd, patches, indices);
+  }} else {{
+    Plotly.restyle(gd, patches[1], [fibAnchorTraceIndex]);
+  }}
   dbgLog('interactive_chart.js:updateAnchorTrace', 'scatter anchor coords', {{
     runId: 'scatter-fix',
     anchors: fibConfig.anchors,
@@ -839,23 +877,13 @@ function renderFibOverlay() {{
 function onFibPointerMove(evt) {{
   if (draggingAnchorId && fibConfig) {{
     const {{ x, y }} = getPlotCoords(evt, true);
-    const snapped = snapAnchor(x, y);
+    const snapped = snapAnchor(x, y, false);
     const anchor = fibConfig.anchors.find((a) => a.id === draggingAnchorId);
     if (!anchor) return;
-    const before = {{ barIndex: anchor.barIndex, price: anchor.price }};
     anchor.barIndex = snapped.barIndex;
     anchor.price = snapped.price;
     updateAnchorTrace();
-    renderFibOverlay();
     setAnchorHoverUI(false, true);
-    dbgLog('interactive_chart.js:drag-move', 'anchor repositioned', {{
-      runId: 'drag-bounds-fix',
-      anchorId: anchor.id,
-      before,
-      after: snapped,
-      pointerY: y,
-      bounds: ohlcPriceBounds(),
-    }}, 'H14,H15');
     return;
   }}
   if (!hasFibManual || suppressCrosshair) return;
@@ -906,6 +934,22 @@ function onFibPointerDown(evt) {{
 }}
 
 function onFibPointerUp(evt) {{
+  if (draggingAnchorId && fibConfig && evt) {{
+    const {{ x, y }} = getPlotCoords(evt, true);
+    const snapped = snapAnchor(x, y, true);
+    const anchor = fibConfig.anchors.find((a) => a.id === draggingAnchorId);
+    if (anchor) {{
+      anchor.barIndex = snapped.barIndex;
+      anchor.price = snapped.price;
+      updateAnchorTrace();
+      renderFibOverlay();
+      dbgLog('interactive_chart.js:pointerup', 'anchor snap finalize', {{
+        runId: 'drag-ux',
+        anchorId: anchor.id,
+        after: snapped,
+      }}, 'H16');
+    }}
+  }}
   if (evt?.pointerId !== undefined) {{
     try {{ gd.releasePointerCapture(evt.pointerId); }} catch (err) {{}}
   }}
@@ -924,27 +968,46 @@ function initFibInteractive() {{
     anchor.price = clampAnchorPrice(anchor.price);
   }}
 
-  Plotly.addTraces(gd, [{{
-    type: 'scatter',
-    x: fibConfig.anchors.map((a) => a.barIndex),
-    y: fibConfig.anchors.map((a) => a.price),
-    xaxis: 'x',
-    yaxis: 'y',
-    mode: 'markers+text',
-    text: fibConfig.anchors.map((a) => a.label),
-    textposition: 'middle center',
-    textfont: {{ color: '#1e293b', size: 12 }},
-    marker: {{
-      size: 34,
-      color: '#fbbf24',
-      symbol: 'circle',
-      line: {{ color: '#ffffff', width: 2 }},
+  Plotly.addTraces(gd, [
+    {{
+      type: 'scatter',
+      x: fibConfig.anchors.map((a) => a.barIndex),
+      y: fibConfig.anchors.map((a) => a.price),
+      xaxis: 'x',
+      yaxis: 'y',
+      mode: 'markers',
+      marker: {{
+        size: 72,
+        color: 'rgba(0,0,0,0)',
+        opacity: 0,
+        symbol: 'circle',
+      }},
+      hoverinfo: 'skip',
+      name: '_fib_anchor_hits',
+      showlegend: false,
     }},
-    hoverinfo: 'text',
-    hovertext: fibConfig.anchors.map((a) => `${{a.label}} · 拖動調整`),
-    name: '_fib_anchors',
-    showlegend: false,
-  }}]).then(() => {{
+    {{
+      type: 'scatter',
+      x: fibConfig.anchors.map((a) => a.barIndex),
+      y: fibConfig.anchors.map((a) => a.price),
+      xaxis: 'x',
+      yaxis: 'y',
+      mode: 'markers+text',
+      text: fibConfig.anchors.map((a) => a.label),
+      textposition: 'middle center',
+      textfont: {{ color: '#1e293b', size: 12 }},
+      marker: {{
+        size: 34,
+        color: '#fbbf24',
+        symbol: 'circle',
+        line: {{ color: '#ffffff', width: 2 }},
+      }},
+      hoverinfo: 'text',
+      hovertext: fibConfig.anchors.map((a) => `${{a.label}} · 按住拖動`),
+      name: '_fib_anchors',
+      showlegend: false,
+    }},
+  ]).then(() => {{
     fibAnchorTraceIndex = gd.data.length - 1;
     renderFibOverlay();
     const draglayer = gd.querySelector('.draglayer');
