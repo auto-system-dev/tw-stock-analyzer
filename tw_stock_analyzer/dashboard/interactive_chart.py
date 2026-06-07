@@ -212,6 +212,12 @@ function xToKey(x) {{
   return raw;
 }}
 
+function nearestBarKey(x) {{
+  const rounded = String(Math.round(Number(x)));
+  if (dataMap[rounded]) return rounded;
+  return xToKey(x);
+}}
+
 function renderBar(d) {{
   if (!d) return;
   const chgCls = d.change > 0 ? 'up' : (d.change < 0 ? 'down' : 'flat');
@@ -370,11 +376,22 @@ Plotly.newPlot(gd, figObj.data, figObj.layout, {{
 
 renderBar(dataMap[defaultKey]);
 
-function showPoint(x) {{
-  const key = xToKey(x);
-  if (dataMap[key]) {{
-    renderBar(dataMap[key]);
-    updateCrosshair(x, dataMap[key].close);
+function showPoint(x, source) {{
+  const key = nearestBarKey(x);
+  if (!dataMap[key]) return;
+  renderBar(dataMap[key]);
+  updateCrosshair(x, dataMap[key].close);
+  if (hasFibManual && source) {{
+    const xax = gd._fullLayout?.xaxis;
+    const bb = gd.getBoundingClientRect();
+    const crosshairPx = xax ? bb.left + xax.d2p(x) : null;
+    dbgLog('interactive_chart.js:showPoint', 'crosshair update', {{
+      runId: 'crosshair-fix',
+      source,
+      dataX: Number(x),
+      barKey: key,
+      crosshairPx,
+    }}, 'H1,H2');
   }}
 }}
 
@@ -385,12 +402,16 @@ gd.on('plotly_hover', (event) => {{
     if (anchorPt) setAnchorHoverUI(true, false);
     if (event.points?.length) {{
       const hoverPt = anchorPt || event.points[0];
-      showPoint(hoverPt.x);
+      dbgLog('interactive_chart.js:plotly_hover', 'hover skipped for crosshair', {{
+        runId: 'crosshair-fix',
+        hoverX: hoverPt.x,
+        source: anchorPt ? 'anchor' : 'trace',
+      }}, 'H1');
     }}
     return;
   }}
   if (!event.points || !event.points.length) return;
-  showPoint(event.points[0].x);
+  showPoint(event.points[0].x, 'plotly_hover');
 }});
 
 gd.on('plotly_click', (event) => {{
@@ -408,7 +429,7 @@ gd.on('plotly_click', (event) => {{
     return;
   }}
   if (draggingAnchorId) return;
-  showPoint(event.points[0].x);
+  showPoint(event.points[0].x, 'plotly_click');
 }});
 
 gd.on('plotly_unhover', () => {{
@@ -502,8 +523,8 @@ function findAnchorNearPixel(evt) {{
   let best = null;
   let bestDist = ANCHOR_HIT_PX;
   for (const anchor of fibConfig.anchors) {{
-    const px = bb.left + xax._offset + xax.d2p(anchor.barIndex);
-    const py = bb.top + yax._offset + yax.d2p(anchor.price);
+    const px = bb.left + xax.d2p(anchor.barIndex);
+    const py = bb.top + yax.d2p(anchor.price);
     const dist = Math.hypot(evt.clientX - px, evt.clientY - py);
     if (dist < bestDist) {{
       bestDist = dist;
@@ -655,8 +676,8 @@ function onFibPointerMove(evt) {{
     const yax = gd._fullLayout.yaxis;
     const bb = gd.getBoundingClientRect();
     const anchor = near;
-    const px = bb.left + xax._offset + xax.d2p(anchor.barIndex);
-    const py = bb.top + yax._offset + yax.d2p(anchor.price);
+    const px = bb.left + xax.d2p(anchor.barIndex);
+    const py = bb.top + yax.d2p(anchor.price);
     dbgLog('interactive_chart.js:pointermove', 'anchor hover', {{
       runId: 'cursor-fix',
       anchorId: near.id,
@@ -666,7 +687,18 @@ function onFibPointerMove(evt) {{
   }}
   if (!isInPricePanel(evt)) return;
   const {{ x }} = getPlotCoords(evt);
-  showPoint(x);
+  const xax = gd._fullLayout.xaxis;
+  const bb = gd.getBoundingClientRect();
+  const pointerPx = evt.clientX;
+  const crosshairPx = bb.left + xax.d2p(x);
+  dbgLog('interactive_chart.js:pointermove', 'crosshair align', {{
+    runId: 'crosshair-fix',
+    pointerPx,
+    crosshairPx,
+    deltaPx: pointerPx - crosshairPx,
+    dataX: x,
+  }}, 'H1,H2');
+  showPoint(x, 'pointermove');
 }}
 
 function onFibPointerDown(evt) {{
