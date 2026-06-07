@@ -112,8 +112,8 @@ def _chart_html(
     margin-bottom: 4px;
     padding: 0 2px;
   }
-  #chart .scatterlayer .pts .point {{
-    cursor: grab;
+  #chart.fib-manual-drag .draglayer {{
+    cursor: inherit;
   }}"""
         fib_hint_html = (
             '<div id="fib-hint">手動模式：拖動圖上錨點（低/高 或 A/B/C）即時更新斐波那契線</div>'
@@ -372,14 +372,36 @@ function showPoint(x) {{
 }}
 
 gd.on('plotly_hover', (event) => {{
-  if (suppressCrosshair || draggingAnchorId || hasFibManual) return;
+  if (suppressCrosshair || draggingAnchorId) return;
+  if (hasFibManual) {{
+    const anchorPt = event.points?.find((p) => p.data?.name === '_fib_anchors');
+    gd.classList.toggle('fib-manual-drag', Boolean(anchorPt));
+    gd.style.cursor = anchorPt ? 'grab' : '';
+    if (event.points?.length) {{
+      const hoverPt = anchorPt || event.points[0];
+      showPoint(hoverPt.x);
+    }}
+    return;
+  }}
   if (!event.points || !event.points.length) return;
   showPoint(event.points[0].x);
 }});
 
 gd.on('plotly_click', (event) => {{
+  if (!event.points?.length) return;
+  const anchorPt = event.points.find((p) => p.data?.name === '_fib_anchors');
+  if (anchorPt && fibConfig) {{
+    draggingAnchorId = fibConfig.anchors[anchorPt.pointNumber].id;
+    suppressCrosshair = true;
+    clearCrosshair();
+    gd.style.cursor = 'grabbing';
+    dbgLog('interactive_chart.js:plotly_click', 'anchor drag started via click', {{
+      runId: 'drag-fix',
+      anchorId: draggingAnchorId,
+    }}, 'H2');
+    return;
+  }}
   if (draggingAnchorId) return;
-  if (!event.points || !event.points.length) return;
   showPoint(event.points[0].x);
 }});
 
@@ -440,12 +462,35 @@ function dbgLog(location, message, data, hypothesisId) {{
   // #endregion
 }}
 
-function findAnchorTracePoint(evt) {{
-  if (!fibConfig || !window.Plotly?.Fx?.hover) return null;
+const ANCHOR_HIT_PX = 28;
+
+function findAnchorNearPixel(evt) {{
+  if (!fibConfig || !gd._fullLayout) return null;
+  const bb = gd.getBoundingClientRect();
+  const xax = gd._fullLayout.xaxis;
+  const yax = gd._fullLayout.yaxis;
+  let best = null;
+  let bestDist = ANCHOR_HIT_PX;
+  for (const anchor of fibConfig.anchors) {{
+    const px = bb.left + xax.d2p(anchor.barIndex);
+    const py = bb.top + yax.d2p(anchor.price);
+    const dist = Math.hypot(evt.clientX - px, evt.clientY - py);
+    if (dist < bestDist) {{
+      bestDist = dist;
+      best = anchor;
+    }}
+  }}
+  return best;
+}}
+
+function findAnchorAtPointer(evt) {{
+  const near = findAnchorNearPixel(evt);
+  if (near) return near;
+  if (!window.Plotly?.Fx?.hover) return null;
   const items = Plotly.Fx.hover(gd, evt);
-  if (!items || !items.length) return null;
+  if (!items?.length) return null;
   for (const item of items) {{
-    if (item.data && item.data.name === '_fib_anchors') {{
+    if (item.data?.name === '_fib_anchors') {{
       const idx = item.pointNumber;
       if (idx >= 0 && idx < fibConfig.anchors.length) {{
         return fibConfig.anchors[idx];
@@ -569,9 +614,13 @@ function onFibPointerMove(evt) {{
     anchor.price = snapped.price;
     updateAnchorTrace();
     renderFibOverlay();
+    gd.style.cursor = 'grabbing';
     return;
   }}
-  if (!hasFibManual || suppressCrosshair || !isInPricePanel(evt)) return;
+  if (!hasFibManual || suppressCrosshair) return;
+  const near = findAnchorNearPixel(evt);
+  gd.style.cursor = near ? 'grab' : '';
+  if (!isInPricePanel(evt)) return;
   const {{ x }} = getPlotCoords(evt);
   showPoint(x);
 }}
@@ -579,6 +628,7 @@ function onFibPointerMove(evt) {{
 function onFibPointerUp() {{
   draggingAnchorId = null;
   suppressCrosshair = false;
+  gd.style.cursor = '';
 }}
 
 function initFibInteractive() {{
@@ -598,7 +648,7 @@ function initFibInteractive() {{
     textposition: 'middle center',
     textfont: {{ color: '#1e293b', size: 12 }},
     marker: {{
-      size: 22,
+      size: 28,
       color: '#fbbf24',
       symbol: 'circle',
       line: {{ color: '#ffffff', width: 2 }},
@@ -618,11 +668,17 @@ function initFibInteractive() {{
   }});
 
   gd.addEventListener('mousedown', (evt) => {{
-    const anchor = findAnchorTracePoint(evt);
+    const anchor = findAnchorAtPointer(evt);
     if (!anchor) return;
     draggingAnchorId = anchor.id;
     suppressCrosshair = true;
     clearCrosshair();
+    gd.style.cursor = 'grabbing';
+    dbgLog('interactive_chart.js:mousedown', 'anchor drag started', {{
+      runId: 'drag-fix',
+      anchorId: anchor.id,
+      method: findAnchorNearPixel(evt) ? 'pixel' : 'fx',
+    }}, 'H2,H4');
     evt.preventDefault();
     evt.stopPropagation();
   }}, true);
