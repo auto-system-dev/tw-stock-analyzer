@@ -585,7 +585,7 @@ def main() -> None:
             st.caption(f"資料不足，無法計算斐波那契{fib_label}。")
         elif show_fibonacci and fib_anchor_mode == "manual" and fib_source is not None:
             st.caption(
-                "手動模式：拖動錨點調整斐波那契（參考 TradingView 兩點/三點自由定位，僅影響圖表顯示）。"
+                "手動模式：拖動圖上黃色把手調整斐波那契（TradingView 式 HTML 拖曳，僅影響圖表顯示）。"
             )
         elif show_fibonacci and isinstance(fib_source, FibonacciRetracement):
             hi = format_chart_index(fib_source.swing_high_date, chart_spec)
