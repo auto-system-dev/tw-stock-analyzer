@@ -260,16 +260,28 @@ function activeShapes() {{
   return baseShapes.concat(fibShapes);
 }}
 
-function computePriceYRange() {{
+function computePriceYRange(levels) {{
   let ymin = Infinity;
   let ymax = -Infinity;
   for (const d of Object.values(dataMap)) {{
     if (d.low != null) ymin = Math.min(ymin, d.low);
     if (d.high != null) ymax = Math.max(ymax, d.high);
   }}
+  if (levels) {{
+    for (const level of levels) {{
+      ymin = Math.min(ymin, level.price);
+      ymax = Math.max(ymax, level.price);
+    }}
+  }}
   if (!Number.isFinite(ymin) || !Number.isFinite(ymax)) return null;
   const pad = Math.max((ymax - ymin) * 0.06, 20);
   return [ymin - pad, ymax + pad];
+}}
+
+function refreshLockedYRange(levels) {{
+  const next = computePriceYRange(levels);
+  if (!next) return;
+  lockedYRange = next;
 }}
 
 function applyLayoutPatch(patch) {{
@@ -376,22 +388,27 @@ Plotly.newPlot(gd, figObj.data, figObj.layout, {{
 
 renderBar(dataMap[defaultKey]);
 
-function showPoint(x, source) {{
+function showPoint(x, source, yPrice) {{
   const key = nearestBarKey(x);
   if (!dataMap[key]) return;
   renderBar(dataMap[key]);
-  updateCrosshair(x, dataMap[key].close);
+  const crossY = yPrice !== undefined && yPrice !== null ? yPrice : dataMap[key].close;
+  updateCrosshair(x, crossY);
   if (hasFibManual && source) {{
     const xax = gd._fullLayout?.xaxis;
+    const yax = gd._fullLayout?.yaxis;
     const bb = gd.getBoundingClientRect();
     const crosshairPx = xax ? bb.left + xax.d2p(x) : null;
+    const crosshairPy = yax ? bb.top + yax.d2p(crossY) : null;
     dbgLog('interactive_chart.js:showPoint', 'crosshair update', {{
-      runId: 'crosshair-fix',
+      runId: 'crosshair-fix2',
       source,
       dataX: Number(x),
+      crossY: Number(crossY),
       barKey: key,
       crosshairPx,
-    }}, 'H1,H2');
+      crosshairPy,
+    }}, 'H1,H2,H5');
   }}
 }}
 
@@ -434,7 +451,10 @@ gd.on('plotly_click', (event) => {{
 
 gd.on('plotly_unhover', () => {{
   if (suppressCrosshair || draggingAnchorId) return;
-  if (hasFibManual) setAnchorHoverUI(false, false);
+  if (hasFibManual) {{
+    setAnchorHoverUI(false, false);
+    return;
+  }}
   clearCrosshair();
   renderBar(dataMap[defaultKey]);
 }});
@@ -442,10 +462,14 @@ gd.on('plotly_unhover', () => {{
 function getPlotCoords(evt) {{
   const bb = gd.getBoundingClientRect();
   const fl = gd._fullLayout;
-  if (!fl || !fl.xaxis || !fl.yaxis) return {{ x: 0, y: 0 }};
+  if (!fl || !fl.xaxis || !fl.yaxis) return {{ x: 0, y: 0, pointerPx: 0, pointerPy: 0 }};
+  const pointerPx = evt.clientX - bb.left;
+  const pointerPy = evt.clientY - bb.top;
   return {{
-    x: fl.xaxis.p2d(evt.clientX - bb.left),
-    y: fl.yaxis.p2d(evt.clientY - bb.top),
+    x: fl.xaxis.p2d(pointerPx),
+    y: fl.yaxis.p2d(pointerPy),
+    pointerPx,
+    pointerPy,
   }};
 }}
 
@@ -582,17 +606,41 @@ function computeExtensionLevels() {{
   const a = fibConfig.anchors.find((x) => x.role === 'a');
   const b = fibConfig.anchors.find((x) => x.role === 'b');
   const c = fibConfig.anchors.find((x) => x.role === 'c');
-  if (!a || !b || !c) return null;
+  if (!a || !b || !c) {{
+    dbgLog('interactive_chart.js:computeExtensionLevels', 'missing anchors', {{
+      runId: 'ext-fix',
+      hasA: Boolean(a),
+      hasB: Boolean(b),
+      hasC: Boolean(c),
+    }}, 'H8');
+    return null;
+  }}
   const upTrend = a.barIndex < b.barIndex;
   if (upTrend) {{
-    if (b.price <= a.price || c.price >= b.price || c.price <= a.price) return null;
+    if (b.price <= a.price || c.price >= b.price || c.price <= a.price) {{
+      dbgLog('interactive_chart.js:computeExtensionLevels', 'uptrend invalid', {{
+        runId: 'ext-fix',
+        a: a.price,
+        b: b.price,
+        c: c.price,
+      }}, 'H8');
+      return null;
+    }}
     const impulse = b.price - a.price;
     return FIB_EXT_RATIOS.map(([ratio, label]) => ({{
       label,
       price: c.price + ratio * impulse,
     }}));
   }}
-  if (b.price >= a.price || c.price <= b.price || c.price >= a.price) return null;
+  if (b.price >= a.price || c.price <= b.price || c.price >= a.price) {{
+    dbgLog('interactive_chart.js:computeExtensionLevels', 'downtrend invalid', {{
+      runId: 'ext-fix',
+      a: a.price,
+      b: b.price,
+      c: c.price,
+    }}, 'H8');
+    return null;
+  }}
   const impulse = a.price - b.price;
   return FIB_EXT_RATIOS.map(([ratio, label]) => ({{
     label,
@@ -611,6 +659,13 @@ function renderFibOverlay() {{
   const x1 = fibConfig.bars[fibConfig.bars.length - 1].x;
   fibShapes = [];
   fibLevelAnnotations = [];
+  dbgLog('interactive_chart.js:renderFibOverlay', 'levels computed', {{
+    runId: 'ext-fix',
+    mode: fibConfig.mode,
+    levelCount: levels ? levels.length : 0,
+    lockedYRange,
+    anchors: fibConfig.anchors,
+  }}, 'H8,H9');
   if (!levels) {{
     applyLayoutPatch({{
       shapes: activeShapes(),
@@ -618,6 +673,7 @@ function renderFibOverlay() {{
     }});
     return;
   }}
+  refreshLockedYRange(levels);
   for (const level of levels) {{
     const color = colors[level.label] || '#eab308';
     const width = keyLevels.has(level.label) ? 1.8 : 1.0;
@@ -686,19 +742,26 @@ function onFibPointerMove(evt) {{
     }}, 'H3,H7');
   }}
   if (!isInPricePanel(evt)) return;
-  const {{ x }} = getPlotCoords(evt);
+  const {{ x, y, pointerPx, pointerPy }} = getPlotCoords(evt);
   const xax = gd._fullLayout.xaxis;
+  const yax = gd._fullLayout.yaxis;
   const bb = gd.getBoundingClientRect();
-  const pointerPx = evt.clientX;
   const crosshairPx = bb.left + xax.d2p(x);
+  const crosshairPy = bb.top + yax.d2p(y);
   dbgLog('interactive_chart.js:pointermove', 'crosshair align', {{
-    runId: 'crosshair-fix',
-    pointerPx,
+    runId: 'crosshair-fix2',
+    pointerPx: evt.clientX,
+    pointerPy: evt.clientY,
+    relPx: pointerPx,
+    relPy: pointerPy,
     crosshairPx,
-    deltaPx: pointerPx - crosshairPx,
+    crosshairPy,
+    deltaPx: evt.clientX - crosshairPx,
+    deltaPy: evt.clientY - crosshairPy,
     dataX: x,
-  }}, 'H1,H2');
-  showPoint(x, 'pointermove');
+    dataY: y,
+  }}, 'H1,H2,H5');
+  showPoint(x, 'pointermove', y);
 }}
 
 function onFibPointerDown(evt) {{
