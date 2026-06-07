@@ -112,15 +112,11 @@ def _chart_html(
     margin-bottom: 4px;
     padding: 0 2px;
   }
-  #chart-wrap {
+  #chart {
     position: relative;
   }
   #fib-anchor-layer {
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
     pointer-events: none;
     z-index: 20;
     overflow: visible;
@@ -458,18 +454,26 @@ function snapAnchor(x, y) {{
   return {{ barIndex: bestBar.index, price }};
 }}
 
+function layoutAnchorLayer() {{
+  if (!fibAnchorLayer || !gd._fullLayout) return;
+  const xax = gd._fullLayout.xaxis;
+  const yax = gd._fullLayout.yaxis;
+  fibAnchorLayer.style.left = `${{xax._offset}}px`;
+  fibAnchorLayer.style.top = `${{yax._offset}}px`;
+  fibAnchorLayer.style.width = `${{xax._length}}px`;
+  fibAnchorLayer.style.height = `${{yax._length}}px`;
+}}
+
 function ensureAnchorLayer() {{
-  if (fibAnchorLayer) return fibAnchorLayer;
-  let wrap = document.getElementById('chart-wrap');
-  if (!wrap) {{
-    wrap = document.createElement('div');
-    wrap.id = 'chart-wrap';
-    gd.parentNode.insertBefore(wrap, gd);
-    wrap.appendChild(gd);
+  if (fibAnchorLayer) {{
+    layoutAnchorLayer();
+    return fibAnchorLayer;
   }}
+  gd.style.position = 'relative';
   fibAnchorLayer = document.createElement('div');
   fibAnchorLayer.id = 'fib-anchor-layer';
-  wrap.appendChild(fibAnchorLayer);
+  gd.appendChild(fibAnchorLayer);
+  layoutAnchorLayer();
   return fibAnchorLayer;
 }}
 
@@ -497,9 +501,10 @@ function renderAnchorHandles() {{
   const fl = gd._fullLayout;
   const handleSize = 32;
   const half = handleSize / 2;
-  const wrap = document.getElementById('chart-wrap');
+  layoutAnchorLayer();
+  const xax = fl.xaxis;
+  const yax = fl.yaxis;
   const gdRect = gd.getBoundingClientRect();
-  const wrapRect = wrap ? wrap.getBoundingClientRect() : null;
   const layerRect = layer.getBoundingClientRect();
   const handlePositions = [];
   for (const anchor of fibConfig.anchors) {{
@@ -508,8 +513,8 @@ function renderAnchorHandles() {{
     btn.className = 'fib-anchor-handle';
     btn.textContent = anchor.label;
     btn.dataset.id = anchor.id;
-    const left = fl.xaxis.d2p(anchor.barIndex) - half;
-    const top = fl.yaxis.d2p(anchor.price) - half;
+    const left = xax.d2p(anchor.barIndex) - xax._offset - half;
+    const top = yax.d2p(anchor.price) - yax._offset - half;
     btn.style.left = `${{left}}px`;
     btn.style.top = `${{top}}px`;
     handlePositions.push({{
@@ -518,8 +523,10 @@ function renderAnchorHandles() {{
       price: anchor.price,
       left,
       top,
-      d2pX: fl.xaxis.d2p(anchor.barIndex),
-      d2pY: fl.yaxis.d2p(anchor.price),
+      d2pX: xax.d2p(anchor.barIndex),
+      d2pY: yax.d2p(anchor.price),
+      relX: xax.d2p(anchor.barIndex) - xax._offset,
+      relY: yax.d2p(anchor.price) - yax._offset,
     }});
     btn.addEventListener('mousedown', (evt) => {{
       draggingAnchorId = anchor.id;
@@ -538,22 +545,24 @@ function renderAnchorHandles() {{
     layer.appendChild(btn);
   }}
   dbgLog('interactive_chart.js:renderAnchorHandles', 'anchor positions computed', {{
+    runId: 'post-fix',
     handlePositions,
     lockedYRange,
-    xaxisRange: fl.xaxis.range,
-    yaxisRange: fl.yaxis.range,
-    xaxisOffset: fl.xaxis._offset,
-    yaxisOffset: fl.yaxis._offset,
-    xaxisLength: fl.xaxis._length,
-    yaxisLength: fl.yaxis._length,
+    xaxisRange: xax.range,
+    yaxisRange: yax.range,
+    xaxisOffset: xax._offset,
+    yaxisOffset: yax._offset,
+    xaxisLength: xax._length,
+    yaxisLength: yax._length,
     gdSize: {{ w: gdRect.width, h: gdRect.height }},
-    wrapSize: wrapRect ? {{ w: wrapRect.width, h: wrapRect.height }} : null,
     layerSize: {{ w: layerRect.width, h: layerRect.height }},
-    gdWrapDelta: wrapRect ? {{
-      left: gdRect.left - wrapRect.left,
-      top: gdRect.top - wrapRect.top,
-    }} : null,
-  }}, 'H1,H3,H4,H5');
+    layerBox: {{
+      left: xax._offset,
+      top: yax._offset,
+      width: xax._length,
+      height: yax._length,
+    }},
+  }}, 'H1,H5');
 }}
 
 function computeRetracementLevels() {{
@@ -680,6 +689,11 @@ function initFibInteractive() {{
     }});
   }});
 
+  gd.on('plotly_afterplot', () => {{
+    if (!fibConfig || !fibConfig.enabled) return;
+    renderAnchorHandles();
+  }});
+
   gd.addEventListener('mousemove', onFibPointerMove);
   window.addEventListener('mousemove', onFibPointerMove);
   window.addEventListener('mouseup', onFibPointerUp);
@@ -692,7 +706,9 @@ function initFibInteractive() {{
 
 window.addEventListener('resize', () => {{
   Plotly.Plots.resize(gd);
-  if (fibConfig && fibConfig.enabled) renderAnchorHandles();
+  if (fibConfig && fibConfig.enabled) {{
+    requestAnimationFrame(() => renderAnchorHandles());
+  }}
 }});
 </script>
 </body>
