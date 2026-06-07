@@ -398,7 +398,8 @@ def build_combined_chart(
     fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)")
     for r in (1, 2, 3, 4):
         fig.update_xaxes(showticklabels=False, row=r, col=1)
-    _add_hover_capture(fig, df, x_coords, 1, "close")
+    if not fib_margin:
+        _add_hover_capture(fig, df, x_coords, 1, "close")
     plot_df = df.assign(_volume_lots=vol_lots)
     _add_hover_capture(fig, plot_df, x_coords, 2, "_volume_lots")
     _add_hover_capture(fig, df, x_coords, 3, "rsi_14")
