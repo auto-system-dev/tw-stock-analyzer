@@ -284,12 +284,79 @@ function refreshLockedYRange(levels) {{
   lockedYRange = next;
 }}
 
+let lastCrosshairPointer = null;
+
+function pointerToPaper(relX, relY) {{
+  const fl = gd._fullLayout;
+  if (!fl?.xaxis || !fl?.yaxis) return null;
+  const xax = fl.xaxis;
+  const yax = fl.yaxis;
+  const cx = Math.max(xax._offset, Math.min(xax._offset + xax._length, relX));
+  const cy = Math.max(yax._offset, Math.min(yax._offset + yax._length, relY));
+  const xPaper = xax.domain[0] + ((cx - xax._offset) / xax._length) * (xax.domain[1] - xax.domain[0]);
+  const yPaper = yax.domain[0] + ((cy - yax._offset) / yax._length) * (yax.domain[1] - yax.domain[0]);
+  return {{ cx, cy, xPaper, yPaper, xax, yax }};
+}}
+
+function getCrosshairShapes() {{
+  if (!lastCrosshairPointer || suppressCrosshair || draggingAnchorId) return [];
+  const paper = pointerToPaper(lastCrosshairPointer.relX, lastCrosshairPointer.relY);
+  if (!paper) return [];
+  const {{ xPaper, yPaper, xax, yax }} = paper;
+  return [
+    {{
+      type: 'line',
+      xref: 'paper',
+      yref: 'paper',
+      x0: xPaper,
+      x1: xPaper,
+      y0: yax.domain[0],
+      y1: yax.domain[1],
+      line: crosshairLine,
+      layer: 'above',
+    }},
+    {{
+      type: 'line',
+      xref: 'paper',
+      yref: 'paper',
+      x0: xax.domain[0],
+      x1: xax.domain[1],
+      y0: yPaper,
+      y1: yPaper,
+      line: crosshairLine,
+      layer: 'above',
+    }},
+  ];
+}}
+
 function applyLayoutPatch(patch) {{
   if (lockedYRange) {{
     patch['yaxis.autorange'] = false;
     patch['yaxis.range'] = lockedYRange;
   }}
+  const baseShapes = patch.shapes !== undefined ? patch.shapes : activeShapes();
+  patch.shapes = baseShapes.concat(getCrosshairShapes());
   return Plotly.relayout(gd, patch);
+}}
+
+function updateCrosshairFromPointer(relX, relY, source) {{
+  lastCrosshairPointer = {{ relX, relY }};
+  if (hasFibManual && source) {{
+    const bb = gd.getBoundingClientRect();
+    const paper = pointerToPaper(relX, relY);
+    const fl = gd._fullLayout;
+    dbgLog('interactive_chart.js:updateCrosshairFromPointer', 'paper crosshair', {{
+      runId: 'crosshair-fix3',
+      source,
+      relX,
+      relY,
+      xPaper: paper?.xPaper,
+      yPaper: paper?.yPaper,
+      screenPx: paper ? bb.left + paper.cx : null,
+      screenPy: paper ? bb.top + paper.cy : null,
+    }}, 'H10,H11');
+  }}
+  return applyLayoutPatch({{}});
 }}
 
 function updateCrosshair(x, closePrice) {{
@@ -320,10 +387,12 @@ function updateCrosshair(x, closePrice) {{
       layer: 'above',
     }});
   }}
+  lastCrosshairPointer = null;
   applyLayoutPatch({{ shapes }});
 }}
 
 function clearCrosshair() {{
+  lastCrosshairPointer = null;
   applyLayoutPatch({{ shapes: activeShapes() }});
 }}
 
@@ -394,22 +463,18 @@ function showPoint(x, source, yPrice) {{
   renderBar(dataMap[key]);
   const crossY = yPrice !== undefined && yPrice !== null ? yPrice : dataMap[key].close;
   updateCrosshair(x, crossY);
-  if (hasFibManual && source) {{
-    const xax = gd._fullLayout?.xaxis;
-    const yax = gd._fullLayout?.yaxis;
-    const bb = gd.getBoundingClientRect();
-    const crosshairPx = xax ? bb.left + xax.d2p(x) : null;
-    const crosshairPy = yax ? bb.top + yax.d2p(crossY) : null;
-    dbgLog('interactive_chart.js:showPoint', 'crosshair update', {{
-      runId: 'crosshair-fix2',
-      source,
-      dataX: Number(x),
-      crossY: Number(crossY),
-      barKey: key,
-      crosshairPx,
-      crosshairPy,
-    }}, 'H1,H2,H5');
-  }}
+}}
+
+function showPointAtPointer(evt, source) {{
+  const bb = gd.getBoundingClientRect();
+  const relX = evt.clientX - bb.left;
+  const relY = evt.clientY - bb.top;
+  const fl = gd._fullLayout;
+  if (!fl?.xaxis) return;
+  const key = nearestBarKey(fl.xaxis.p2d(relX));
+  if (!dataMap[key]) return;
+  renderBar(dataMap[key]);
+  updateCrosshairFromPointer(relX, relY, source);
 }}
 
 gd.on('plotly_hover', (event) => {{
@@ -742,26 +807,7 @@ function onFibPointerMove(evt) {{
     }}, 'H3,H7');
   }}
   if (!isInPricePanel(evt)) return;
-  const {{ x, y, pointerPx, pointerPy }} = getPlotCoords(evt);
-  const xax = gd._fullLayout.xaxis;
-  const yax = gd._fullLayout.yaxis;
-  const bb = gd.getBoundingClientRect();
-  const crosshairPx = bb.left + xax.d2p(x);
-  const crosshairPy = bb.top + yax.d2p(y);
-  dbgLog('interactive_chart.js:pointermove', 'crosshair align', {{
-    runId: 'crosshair-fix2',
-    pointerPx: evt.clientX,
-    pointerPy: evt.clientY,
-    relPx: pointerPx,
-    relPy: pointerPy,
-    crosshairPx,
-    crosshairPy,
-    deltaPx: evt.clientX - crosshairPx,
-    deltaPy: evt.clientY - crosshairPy,
-    dataX: x,
-    dataY: y,
-  }}, 'H1,H2,H5');
-  showPoint(x, 'pointermove', y);
+  showPointAtPointer(evt, 'pointermove');
 }}
 
 function onFibPointerDown(evt) {{
