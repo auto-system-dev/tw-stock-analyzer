@@ -271,6 +271,7 @@ def build_combined_chart(
     fib: FibOverlay | None = None,
     spec: ChartTimeframeSpec | None = None,
     fib_unit: str = "日",
+    fib_margin: bool = False,
 ) -> go.Figure:
     """K 線 + 成交量 + RSI + MACD 合併圖（含十字游標）。"""
     chart_spec = spec or TIMEFRAME_SPECS["日線"]
@@ -367,11 +368,12 @@ def build_combined_chart(
     )
 
     title = f"{title}（{chart_spec.label}）"
+    show_fib_margin = fib is not None or fib_margin
     fig.update_layout(
         title=dict(text=title, x=0.01, xanchor="left", font=dict(size=14)),
         xaxis_rangeslider_visible=False,
         height=880,
-        margin=dict(l=40, r=88 if fib is not None else 20, t=90, b=28),
+        margin=dict(l=40, r=88 if show_fib_margin else 20, t=90, b=28),
         legend=dict(
             orientation="h",
             yanchor="bottom",

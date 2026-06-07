@@ -62,6 +62,19 @@ class FibonacciExtension:
 FibOverlay: TypeAlias = FibonacciRetracement | FibonacciExtension
 
 
+def _bar_index_for_date(df: pd.DataFrame, ts: pd.Timestamp) -> int:
+    target = pd.Timestamp(ts)
+    for i, idx in enumerate(df.index):
+        if pd.Timestamp(idx) == target:
+            return i
+    loc = df.index.get_loc(target)
+    if isinstance(loc, int):
+        return loc
+    if isinstance(loc, slice):
+        return int(loc.start or 0)
+    return int(loc[0])
+
+
 def compute_fibonacci_retracement(
     df: pd.DataFrame,
     lookback: int = 60,
@@ -176,6 +189,81 @@ def compute_fibonacci_extension(
         lookback_days=lookback,
         levels=levels,
     )
+
+
+def build_fib_anchor_config(
+    df: pd.DataFrame,
+    fib: FibOverlay,
+    x_coords: list,
+    *,
+    mode: str,
+    is_ordinal: bool,
+) -> dict:
+    """建立前端手動斐波那契所需的錨點與 K 棒資料。"""
+    bars: list[dict] = []
+    for i, (_, row) in enumerate(df.iterrows()):
+        x = x_coords[i]
+        if not is_ordinal:
+            x = int(pd.Timestamp(df.index[i]).value // 1_000_000)
+        bars.append(
+            {
+                "index": i,
+                "x": x,
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+            }
+        )
+
+    if isinstance(fib, FibonacciRetracement):
+        low_i = _bar_index_for_date(df, fib.swing_low_date)
+        high_i = _bar_index_for_date(df, fib.swing_high_date)
+        anchors = [
+            {
+                "id": "low",
+                "role": "low",
+                "barIndex": low_i,
+                "price": fib.swing_low,
+                "label": "低",
+            },
+            {
+                "id": "high",
+                "role": "high",
+                "barIndex": high_i,
+                "price": fib.swing_high,
+                "label": "高",
+            },
+        ]
+    else:
+        anchors = [
+            {
+                "id": "a",
+                "role": "a",
+                "barIndex": _bar_index_for_date(df, fib.point_a_date),
+                "price": fib.point_a,
+                "label": "A",
+            },
+            {
+                "id": "b",
+                "role": "b",
+                "barIndex": _bar_index_for_date(df, fib.point_b_date),
+                "price": fib.point_b,
+                "label": "B",
+            },
+            {
+                "id": "c",
+                "role": "c",
+                "barIndex": _bar_index_for_date(df, fib.point_c_date),
+                "price": fib.point_c,
+                "label": "C",
+            },
+        ]
+
+    return {
+        "enabled": True,
+        "mode": mode,
+        "anchors": anchors,
+        "bars": bars,
+    }
 
 
 def _level_price(fib: FibonacciRetracement, label: str) -> float:

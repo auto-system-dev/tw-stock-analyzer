@@ -109,7 +109,7 @@ st.markdown(
 )
 
 
-def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, str, int]:
+def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, str, str, int]:
     if "symbol" not in st.session_state:
         st.session_state.symbol = "2330"
 
@@ -158,7 +158,7 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, str, i
             screen_opts["run"] = run_screen_btn
             st.divider()
             st.caption("日線：TWSE · 籌碼/營收：FinMind · 僅供研究參考")
-            return "", "", page, 5, False, False, screen_opts, False, "retracement", 60
+            return "", "", page, 5, False, False, screen_opts, False, "retracement", "auto", 60
 
         st.markdown("**常用標的**")
         cols = st.columns(3)
@@ -176,6 +176,7 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, str, i
         horizon_days = st.slider("預測天數", min_value=1, max_value=20, value=5)
         show_fibonacci = st.checkbox("顯示斐波那契", value=False)
         fib_mode = "retracement"
+        fib_anchor_mode = "auto"
         fib_lookback = 60
         if show_fibonacci:
             fib_mode = st.selectbox(
@@ -183,11 +184,17 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, str, i
                 ["retracement", "extension"],
                 format_func=lambda x: "回撤" if x == "retracement" else "擴展",
             )
-            fib_lookback = st.selectbox(
-                "斐波那契波段天數",
-                [60, 120],
-                format_func=lambda x: f"{x} 日",
+            fib_anchor_mode = st.selectbox(
+                "錨點模式",
+                ["auto", "manual"],
+                format_func=lambda x: "自動" if x == "auto" else "手動拖拉",
             )
+            if fib_anchor_mode == "auto":
+                fib_lookback = st.selectbox(
+                    "斐波那契波段天數",
+                    [60, 120],
+                    format_func=lambda x: f"{x} 日",
+                )
         analyze = st.button("開始分析", type="primary", width="stretch")
         run_bt = st.button("執行回測", width="stretch")
 
@@ -205,6 +212,7 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, str, i
         screen_opts,
         show_fibonacci,
         fib_mode,
+        fib_anchor_mode,
         fib_lookback,
     )
 
@@ -468,6 +476,7 @@ def main() -> None:
         screen_opts,
         show_fibonacci,
         fib_mode,
+        fib_anchor_mode,
         fib_lookback,
     ) = render_sidebar()
 
@@ -563,47 +572,54 @@ def main() -> None:
         display_df = slice_chart_display_range(chart_df, chart_range)
 
         fib_bars = fib_lookback_bars(chart_timeframe, fib_lookback)
-        fib: FibOverlay | None = None
+        fib_source: FibOverlay | None = None
         if show_fibonacci:
+            lookback = len(display_df) if fib_anchor_mode == "manual" else fib_bars
             if fib_mode == "extension":
-                fib = compute_fibonacci_extension(display_df, lookback=fib_bars)
+                fib_source = compute_fibonacci_extension(display_df, lookback=lookback)
             else:
-                fib = compute_fibonacci_retracement(display_df, lookback=fib_bars)
-        if show_fibonacci and fib is None:
+                fib_source = compute_fibonacci_retracement(display_df, lookback=lookback)
+        fib_display = fib_source if fib_anchor_mode == "auto" else None
+        if show_fibonacci and fib_source is None:
             fib_label = "擴展" if fib_mode == "extension" else "回撤"
             st.caption(f"資料不足，無法計算斐波那契{fib_label}。")
-        elif show_fibonacci and isinstance(fib, FibonacciRetracement):
-            hi = format_chart_index(fib.swing_high_date, chart_spec)
-            lo = format_chart_index(fib.swing_low_date, chart_spec)
+        elif show_fibonacci and fib_anchor_mode == "manual" and fib_source is not None:
+            st.caption("手動模式：拖動圖上錨點調整斐波那契線（僅影響圖表顯示）。")
+        elif show_fibonacci and isinstance(fib_source, FibonacciRetracement):
+            hi = format_chart_index(fib_source.swing_high_date, chart_spec)
+            lo = format_chart_index(fib_source.swing_low_date, chart_spec)
             st.caption(
-                f"斐波那契回撤：{fib.trend}波段 · 近 {fib_bars} {chart_spec.fib_unit} · "
-                f"高 {fib.swing_high:,.2f}（{hi}）· "
-                f"低 {fib.swing_low:,.2f}（{lo}）"
+                f"斐波那契回撤：{fib_source.trend}波段 · 近 {fib_bars} {chart_spec.fib_unit} · "
+                f"高 {fib_source.swing_high:,.2f}（{hi}）· "
+                f"低 {fib_source.swing_low:,.2f}（{lo}）"
             )
-        elif show_fibonacci and isinstance(fib, FibonacciExtension):
-            a = format_chart_index(fib.point_a_date, chart_spec)
-            b = format_chart_index(fib.point_b_date, chart_spec)
-            c = format_chart_index(fib.point_c_date, chart_spec)
-            if fib.trend == "上升":
+        elif show_fibonacci and isinstance(fib_source, FibonacciExtension):
+            a = format_chart_index(fib_source.point_a_date, chart_spec)
+            b = format_chart_index(fib_source.point_b_date, chart_spec)
+            c = format_chart_index(fib_source.point_c_date, chart_spec)
+            if fib_source.trend == "上升":
                 st.caption(
-                    f"斐波那契擴展：{fib.trend}波段 · 近 {fib_bars} {chart_spec.fib_unit} · "
-                    f"A 低 {fib.point_a:,.2f}（{a}）· "
-                    f"B 高 {fib.point_b:,.2f}（{b}）· "
-                    f"C 回撤低 {fib.point_c:,.2f}（{c}）"
+                    f"斐波那契擴展：{fib_source.trend}波段 · 近 {fib_bars} {chart_spec.fib_unit} · "
+                    f"A 低 {fib_source.point_a:,.2f}（{a}）· "
+                    f"B 高 {fib_source.point_b:,.2f}（{b}）· "
+                    f"C 回撤低 {fib_source.point_c:,.2f}（{c}）"
                 )
             else:
                 st.caption(
-                    f"斐波那契擴展：{fib.trend}波段 · 近 {fib_bars} {chart_spec.fib_unit} · "
-                    f"A 高 {fib.point_a:,.2f}（{a}）· "
-                    f"B 低 {fib.point_b:,.2f}（{b}）· "
-                    f"C 反彈高 {fib.point_c:,.2f}（{c}）"
+                    f"斐波那契擴展：{fib_source.trend}波段 · 近 {fib_bars} {chart_spec.fib_unit} · "
+                    f"A 高 {fib_source.point_a:,.2f}（{a}）· "
+                    f"B 低 {fib_source.point_b:,.2f}（{b}）· "
+                    f"C 反彈高 {fib_source.point_c:,.2f}（{c}）"
                 )
         render_interactive_chart(
             display_df,
             f"{report.name}（{report.symbol}）股價與均線",
-            fib=fib,
+            fib=fib_display,
             spec=chart_spec,
             fib_unit=chart_spec.fib_unit,
+            fib_chart_mode=fib_mode if show_fibonacci else None,
+            fib_manual=show_fibonacci and fib_anchor_mode == "manual",
+            fib_source=fib_source,
         )
 
     with tab_signal:
