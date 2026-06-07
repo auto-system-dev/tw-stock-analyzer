@@ -369,7 +369,7 @@ def build_combined_chart(
 
     title = f"{title}（{chart_spec.label}）"
     show_fib_margin = fib is not None or fib_margin
-    fig.update_layout(
+    layout_kwargs: dict = dict(
         title=dict(text=title, x=0.01, xanchor="left", font=dict(size=14)),
         xaxis_rangeslider_visible=False,
         height=880,
@@ -387,6 +387,9 @@ def build_combined_chart(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
     )
+    if fib_margin:
+        layout_kwargs["dragmode"] = False
+    fig.update_layout(**layout_kwargs)
     fig.update_yaxes(title_text="價格", row=1, col=1)
     fig.update_yaxes(title_text="量（張）", row=2, col=1)
     fig.update_yaxes(title_text="RSI", row=3, col=1, range=[0, 100])

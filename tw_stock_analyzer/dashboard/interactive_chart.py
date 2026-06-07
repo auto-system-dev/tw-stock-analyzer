@@ -220,6 +220,26 @@ function activeShapes() {{
   return baseShapes.concat(fibShapes);
 }}
 
+function computePriceYRange() {{
+  let ymin = Infinity;
+  let ymax = -Infinity;
+  for (const d of Object.values(dataMap)) {{
+    if (d.low != null) ymin = Math.min(ymin, d.low);
+    if (d.high != null) ymax = Math.max(ymax, d.high);
+  }}
+  if (!Number.isFinite(ymin) || !Number.isFinite(ymax)) return null;
+  const pad = Math.max((ymax - ymin) * 0.06, 20);
+  return [ymin - pad, ymax + pad];
+}}
+
+function applyLayoutPatch(patch) {{
+  if (lockedYRange) {{
+    patch['yaxis.autorange'] = false;
+    patch['yaxis.range'] = lockedYRange;
+  }}
+  return Plotly.relayout(gd, patch);
+}}
+
 function updateCrosshair(x, closePrice) {{
   const shapes = activeShapes();
   shapes.push(
@@ -248,11 +268,11 @@ function updateCrosshair(x, closePrice) {{
       layer: 'above',
     }});
   }}
-  Plotly.relayout(gd, {{ shapes }});
+  applyLayoutPatch({{ shapes }});
 }}
 
 function clearCrosshair() {{
-  Plotly.relayout(gd, {{ shapes: activeShapes() }});
+  applyLayoutPatch({{ shapes: activeShapes() }});
 }}
 
 const gd = document.getElementById('chart');
@@ -264,6 +284,8 @@ let fibConfig = null;
 let fibAnchorTraceIndex = null;
 let draggingAnchorId = null;
 let suppressCrosshair = false;
+let lockedYRange = null;
+let hasFibManual = false;
 
 const FIB_RET_COLORS = {{
   '0%': '#94a3b8',
@@ -284,13 +306,37 @@ const FIB_RET_KEYS = new Set(['38.2%', '50%', '61.8%']);
 const FIB_EXT_KEYS = new Set(['127.2%', '161.8%', '200%']);
 const FIB_RET_RATIOS = [[0, '0%'], [0.382, '38.2%'], [0.5, '50%'], [0.618, '61.8%'], [1, '100%']];
 const FIB_EXT_RATIOS = [[0.618, '61.8%'], [1, '100%'], [1.272, '127.2%'], [1.618, '161.8%'], [2, '200%'], [2.618, '261.8%']];
-const ANCHOR_HIT_RADIUS = 14;
+const ANCHOR_HIT_RADIUS = 22;
+
+(function prepareFibManualLayout() {{
+  const el = document.getElementById('fib-config');
+  if (!el) return;
+  try {{
+    const cfg = JSON.parse(el.textContent);
+    hasFibManual = Boolean(cfg.enabled);
+    if (hasFibManual) figObj.layout.dragmode = false;
+  }} catch (err) {{
+    hasFibManual = false;
+  }}
+}})();
 
 Plotly.newPlot(gd, figObj.data, figObj.layout, {{
   responsive: true,
   displayModeBar: true,
   displaylogo: false,
   modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+}}).then(() => {{
+  if (hasFibManual) {{
+    lockedYRange = computePriceYRange();
+    if (lockedYRange) {{
+      Plotly.relayout(gd, {{
+        dragmode: false,
+        'yaxis.autorange': false,
+        'yaxis.range': lockedYRange,
+      }});
+    }}
+  }}
+  initFibInteractive();
 }});
 
 renderBar(dataMap[defaultKey]);
@@ -408,7 +454,7 @@ function renderFibOverlay() {{
   fibShapes = [];
   fibLevelAnnotations = [];
   if (!levels) {{
-    Plotly.relayout(gd, {{
+    applyLayoutPatch({{
       shapes: activeShapes(),
       annotations: baseAnnotations.concat(fibLevelAnnotations),
     }});
@@ -417,7 +463,6 @@ function renderFibOverlay() {{
   for (const level of levels) {{
     const color = colors[level.label] || '#eab308';
     const width = keyLevels.has(level.label) ? 1.8 : 1.0;
-    const opacity = keyLevels.has(level.label) ? 0.9 : 0.65;
     fibShapes.push({{
       type: 'line',
       xref: 'x',
@@ -427,12 +472,13 @@ function renderFibOverlay() {{
       y0: level.price,
       y1: level.price,
       line: {{ color, width, dash: 'dash' }},
-      opacity,
       layer: 'below',
     }});
     fibLevelAnnotations.push({{
       x: x1,
       y: level.price,
+      xref: 'x',
+      yref: 'y',
       text: `${{level.label}} ${{Math.round(level.price).toLocaleString('zh-TW')}}`,
       showarrow: false,
       xanchor: 'left',
@@ -442,9 +488,10 @@ function renderFibOverlay() {{
       bordercolor: color,
       borderwidth: 1,
       borderpad: 2,
+      cliponaxis: false,
     }});
   }}
-  Plotly.relayout(gd, {{
+  applyLayoutPatch({{
     shapes: activeShapes(),
     annotations: baseAnnotations.concat(fibLevelAnnotations),
   }});
@@ -492,9 +539,11 @@ function initFibInteractive() {{
     draggingAnchorId = anchor.id;
     suppressCrosshair = true;
     clearCrosshair();
+    Plotly.relayout(gd, {{ dragmode: false }});
+    gd.style.cursor = 'grabbing';
     evt.preventDefault();
     evt.stopPropagation();
-  }});
+  }}, true);
 
   window.addEventListener('mousemove', (evt) => {{
     if (!draggingAnchorId || !fibConfig) return;
@@ -511,10 +560,9 @@ function initFibInteractive() {{
   window.addEventListener('mouseup', () => {{
     draggingAnchorId = null;
     suppressCrosshair = false;
+    gd.style.cursor = '';
   }});
 }}
-
-initFibInteractive();
 
 window.addEventListener('resize', () => Plotly.Plots.resize(gd));
 </script>
