@@ -20,6 +20,30 @@ from tw_stock_analyzer.indicators.chart_timeframe import (
 )
 from tw_stock_analyzer.indicators.fibonacci import FibOverlay, build_fib_anchor_config
 
+_DEBUG_LOG_PATH = "debug-f0896b.log"
+
+
+def _debug_log(location: str, message: str, data: dict, hypothesis_id: str) -> None:
+    # #region agent log
+    import time
+    from pathlib import Path
+
+    entry = {
+        "sessionId": "f0896b",
+        "location": location,
+        "message": message,
+        "data": data,
+        "hypothesisId": hypothesis_id,
+        "timestamp": int(time.time() * 1000),
+    }
+    try:
+        Path(_DEBUG_LOG_PATH).open("a", encoding="utf-8").write(
+            json.dumps(entry, ensure_ascii=False) + "\n"
+        )
+    except OSError:
+        pass
+    # #endregion
+
 
 def _num(value: Any) -> float | None:
     if value is None or (isinstance(value, float) and pd.isna(value)):
@@ -449,6 +473,23 @@ function ensureAnchorLayer() {{
   return fibAnchorLayer;
 }}
 
+function dbgLog(location, message, data, hypothesisId) {{
+  // #region agent log
+  fetch('http://127.0.0.1:7340/ingest/76d27155-2cf5-4d9d-8ebc-11308a635c83', {{
+    method: 'POST',
+    headers: {{ 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'f0896b' }},
+    body: JSON.stringify({{
+      sessionId: 'f0896b',
+      location,
+      message,
+      data,
+      hypothesisId,
+      timestamp: Date.now(),
+    }}),
+  }}).catch(() => {{}});
+  // #endregion
+}}
+
 function renderAnchorHandles() {{
   const layer = ensureAnchorLayer();
   layer.innerHTML = '';
@@ -456,14 +497,30 @@ function renderAnchorHandles() {{
   const fl = gd._fullLayout;
   const handleSize = 32;
   const half = handleSize / 2;
+  const wrap = document.getElementById('chart-wrap');
+  const gdRect = gd.getBoundingClientRect();
+  const wrapRect = wrap ? wrap.getBoundingClientRect() : null;
+  const layerRect = layer.getBoundingClientRect();
+  const handlePositions = [];
   for (const anchor of fibConfig.anchors) {{
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'fib-anchor-handle';
     btn.textContent = anchor.label;
     btn.dataset.id = anchor.id;
-    btn.style.left = `${{fl.xaxis.d2p(anchor.barIndex) - half}}px`;
-    btn.style.top = `${{fl.yaxis.d2p(anchor.price) - half}}px`;
+    const left = fl.xaxis.d2p(anchor.barIndex) - half;
+    const top = fl.yaxis.d2p(anchor.price) - half;
+    btn.style.left = `${{left}}px`;
+    btn.style.top = `${{top}}px`;
+    handlePositions.push({{
+      id: anchor.id,
+      barIndex: anchor.barIndex,
+      price: anchor.price,
+      left,
+      top,
+      d2pX: fl.xaxis.d2p(anchor.barIndex),
+      d2pY: fl.yaxis.d2p(anchor.price),
+    }});
     btn.addEventListener('mousedown', (evt) => {{
       draggingAnchorId = anchor.id;
       suppressCrosshair = true;
@@ -480,6 +537,23 @@ function renderAnchorHandles() {{
     }}, {{ passive: false }});
     layer.appendChild(btn);
   }}
+  dbgLog('interactive_chart.js:renderAnchorHandles', 'anchor positions computed', {{
+    handlePositions,
+    lockedYRange,
+    xaxisRange: fl.xaxis.range,
+    yaxisRange: fl.yaxis.range,
+    xaxisOffset: fl.xaxis._offset,
+    yaxisOffset: fl.yaxis._offset,
+    xaxisLength: fl.xaxis._length,
+    yaxisLength: fl.yaxis._length,
+    gdSize: {{ w: gdRect.width, h: gdRect.height }},
+    wrapSize: wrapRect ? {{ w: wrapRect.width, h: wrapRect.height }} : null,
+    layerSize: {{ w: layerRect.width, h: layerRect.height }},
+    gdWrapDelta: wrapRect ? {{
+      left: gdRect.left - wrapRect.left,
+      top: gdRect.top - wrapRect.top,
+    }} : null,
+  }}, 'H1,H3,H4,H5');
 }}
 
 function computeRetracementLevels() {{
@@ -647,6 +721,29 @@ def render_interactive_chart(
             xaxis.coords,
             mode=fib_chart_mode,
             is_ordinal=xaxis.is_ordinal,
+        )
+        _debug_log(
+            "interactive_chart.py:render_interactive_chart",
+            "server fib anchor config",
+            {
+                "mode": fib_chart_mode,
+                "anchors": fib_config.get("anchors"),
+                "barCount": len(fib_config.get("bars", [])),
+                "isOrdinal": xaxis.is_ordinal,
+                "fibSource": (
+                    {
+                        "swing_high": getattr(fib_source, "swing_high", None),
+                        "swing_low": getattr(fib_source, "swing_low", None),
+                    }
+                    if hasattr(fib_source, "swing_high")
+                    else {
+                        "point_a": getattr(fib_source, "point_a", None),
+                        "point_b": getattr(fib_source, "point_b", None),
+                        "point_c": getattr(fib_source, "point_c", None),
+                    }
+                ),
+            },
+            "H2",
         )
         fib_config_json = json.dumps(fib_config, ensure_ascii=False)
 
