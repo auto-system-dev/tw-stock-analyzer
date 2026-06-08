@@ -10,6 +10,25 @@ import pandas as pd
 FIB_SIGNAL_LOOKBACK = 60
 FIB_TOLERANCE_PCT = 0.015
 
+FIB_LOOKBACK_TIERS: dict[int, str] = {
+    13: "短期",
+    21: "短期",
+    34: "中期",
+    55: "中期",
+    89: "長期",
+    144: "長期",
+}
+FIB_LOOKBACK_OPTIONS: tuple[int, ...] = tuple(FIB_LOOKBACK_TIERS.keys())
+FIB_LOOKBACK_DEFAULT = 55
+
+
+def format_fib_lookback_label(days: int) -> str:
+    """儀表板斐波那契波段天數選項顯示文字。"""
+    tier = FIB_LOOKBACK_TIERS.get(days)
+    if tier:
+        return f"{days} 日（{tier}）"
+    return f"{days} 日"
+
 FIB_RATIOS: tuple[tuple[float, str], ...] = (
     (0.0, "0%"),
     (0.236, "23.6%"),

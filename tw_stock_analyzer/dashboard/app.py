@@ -28,11 +28,14 @@ from tw_stock_analyzer.indicators.chart_timeframe import (
     slice_chart_display_range,
 )
 from tw_stock_analyzer.indicators.fibonacci import (
+    FIB_LOOKBACK_DEFAULT,
+    FIB_LOOKBACK_OPTIONS,
     FibonacciExtension,
     FibonacciRetracement,
     FibOverlay,
     compute_fibonacci_extension,
     compute_fibonacci_retracement,
+    format_fib_lookback_label,
 )
 
 # 分析報告結構版本；變更時清除舊 session 快取
@@ -159,7 +162,7 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, str, s
             screen_opts["run"] = run_screen_btn
             st.divider()
             st.caption("日線：TWSE · 籌碼/營收：FinMind · 僅供研究參考")
-            return "", "", page, 5, False, False, screen_opts, False, "retracement", "auto", 60
+            return "", "", page, 5, False, False, screen_opts, False, "retracement", "auto", FIB_LOOKBACK_DEFAULT
 
         st.markdown("**常用標的**")
         cols = st.columns(3)
@@ -178,7 +181,7 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, str, s
         show_fibonacci = st.checkbox("顯示斐波那契", value=False)
         fib_mode = "retracement"
         fib_anchor_mode = "auto"
-        fib_lookback = 60
+        fib_lookback = FIB_LOOKBACK_DEFAULT
         if show_fibonacci:
             fib_mode = st.selectbox(
                 "斐波那契類型",
@@ -193,8 +196,9 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, str, s
             if fib_anchor_mode == "auto":
                 fib_lookback = st.selectbox(
                     "斐波那契波段天數",
-                    [60, 120],
-                    format_func=lambda x: f"{x} 日",
+                    FIB_LOOKBACK_OPTIONS,
+                    index=FIB_LOOKBACK_OPTIONS.index(FIB_LOOKBACK_DEFAULT),
+                    format_func=format_fib_lookback_label,
                 )
         analyze = st.button("開始分析", type="primary", width="stretch")
         run_bt = st.button("執行回測", width="stretch")
