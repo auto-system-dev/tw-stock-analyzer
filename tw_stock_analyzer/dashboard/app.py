@@ -21,6 +21,7 @@ from tw_stock_analyzer.indicators.chart_timeframe import (
     TIMEFRAME_SPECS,
     display_range_options_for,
     fetch_period_for_display_range,
+    fib_calc_dataframe,
     fib_lookback_bars,
     format_chart_index,
     prepare_chart_data,
@@ -574,11 +575,16 @@ def main() -> None:
         fib_bars = fib_lookback_bars(chart_timeframe, fib_lookback)
         fib_source: FibOverlay | None = None
         if show_fibonacci:
-            lookback = len(display_df) if fib_anchor_mode == "manual" else fib_bars
-            if fib_mode == "extension":
-                fib_source = compute_fibonacci_extension(display_df, lookback=lookback)
+            if fib_anchor_mode == "manual":
+                fib_df = display_df
+                lookback = len(display_df)
             else:
-                fib_source = compute_fibonacci_retracement(display_df, lookback=lookback)
+                fib_df = fib_calc_dataframe(chart_df, display_df, fib_bars)
+                lookback = fib_bars
+            if fib_mode == "extension":
+                fib_source = compute_fibonacci_extension(fib_df, lookback=lookback)
+            else:
+                fib_source = compute_fibonacci_retracement(fib_df, lookback=lookback)
         fib_display = fib_source if fib_anchor_mode == "auto" else None
         if show_fibonacci and fib_source is None:
             fib_label = "擴展" if fib_mode == "extension" else "回撤"

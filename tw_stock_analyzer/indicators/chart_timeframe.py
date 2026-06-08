@@ -102,6 +102,21 @@ def fib_lookback_bars(timeframe: str, fib_lookback_days: int) -> int:
     return fib_lookback_days
 
 
+def fib_calc_dataframe(
+    chart_df: pd.DataFrame,
+    display_df: pd.DataFrame,
+    lookback: int,
+) -> pd.DataFrame:
+    """取顯示區間結束點往前 lookback 根 K 棒，供斐波那契計算（可超出顯示裁切）。"""
+    if display_df.empty:
+        return display_df
+    end = display_df.index.max()
+    hist = chart_df.loc[chart_df.index <= end]
+    if hist.empty:
+        return display_df
+    return hist.tail(lookback) if len(hist) >= lookback else hist
+
+
 def resample_ohlcv(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     ohlcv = df[list(OHLCV_COLS)].copy()
     ohlcv.index = pd.to_datetime(ohlcv.index)
