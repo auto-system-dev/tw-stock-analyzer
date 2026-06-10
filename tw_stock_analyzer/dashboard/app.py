@@ -162,7 +162,7 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, str, s
             screen_opts["run"] = run_screen_btn
             st.divider()
             st.caption("日線：TWSE · 籌碼/營收：FinMind · 僅供研究參考")
-            return "", "", page, 5, False, False, screen_opts, False, "retracement", "auto", FIB_LOOKBACK_DEFAULT
+            return "", "", page, 5, False, False, screen_opts, False, "retracement", FIB_LOOKBACK_DEFAULT
 
         st.markdown("**常用標的**")
         cols = st.columns(3)
@@ -180,7 +180,6 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, str, s
         horizon_days = st.slider("預測天數", min_value=1, max_value=20, value=5)
         show_fibonacci = st.checkbox("顯示斐波那契", value=False)
         fib_mode = "retracement"
-        fib_anchor_mode = "auto"
         fib_lookback = FIB_LOOKBACK_DEFAULT
         if show_fibonacci:
             fib_mode = st.selectbox(
@@ -188,18 +187,12 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, str, s
                 ["retracement", "extension"],
                 format_func=lambda x: "回撤" if x == "retracement" else "擴展",
             )
-            fib_anchor_mode = st.selectbox(
-                "錨點模式",
-                ["auto", "manual"],
-                format_func=lambda x: "自動" if x == "auto" else "手動拖拉",
+            fib_lookback = st.selectbox(
+                "斐波那契波段天數",
+                FIB_LOOKBACK_OPTIONS,
+                index=FIB_LOOKBACK_OPTIONS.index(FIB_LOOKBACK_DEFAULT),
+                format_func=format_fib_lookback_label,
             )
-            if fib_anchor_mode == "auto":
-                fib_lookback = st.selectbox(
-                    "斐波那契波段天數",
-                    FIB_LOOKBACK_OPTIONS,
-                    index=FIB_LOOKBACK_OPTIONS.index(FIB_LOOKBACK_DEFAULT),
-                    format_func=format_fib_lookback_label,
-                )
         analyze = st.button("開始分析", type="primary", width="stretch")
         run_bt = st.button("執行回測", width="stretch")
 
@@ -217,7 +210,6 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, str, s
         screen_opts,
         show_fibonacci,
         fib_mode,
-        fib_anchor_mode,
         fib_lookback,
     )
 
@@ -481,7 +473,6 @@ def main() -> None:
         screen_opts,
         show_fibonacci,
         fib_mode,
-        fib_anchor_mode,
         fib_lookback,
     ) = render_sidebar()
 
@@ -579,24 +570,16 @@ def main() -> None:
         fib_bars = fib_lookback_bars(chart_timeframe, fib_lookback)
         fib_source: FibOverlay | None = None
         if show_fibonacci:
-            if fib_anchor_mode == "manual":
-                fib_df = display_df
-                lookback = len(display_df)
-            else:
-                fib_df = fib_calc_dataframe(chart_df, display_df, fib_bars)
-                lookback = fib_bars
+            fib_df = fib_calc_dataframe(chart_df, display_df, fib_bars)
+            lookback = fib_bars
             if fib_mode == "extension":
                 fib_source = compute_fibonacci_extension(fib_df, lookback=lookback)
             else:
                 fib_source = compute_fibonacci_retracement(fib_df, lookback=lookback)
-        fib_display = fib_source if fib_anchor_mode == "auto" else None
+        fib_display = fib_source
         if show_fibonacci and fib_source is None:
             fib_label = "擴展" if fib_mode == "extension" else "回撤"
             st.caption(f"資料不足，無法計算斐波那契{fib_label}。")
-        elif show_fibonacci and fib_anchor_mode == "manual" and fib_source is not None:
-            st.caption(
-                "手動模式：拖動圖上黃色把手調整斐波那契（TradingView 式 HTML 拖曳，僅影響圖表顯示）。"
-            )
         elif show_fibonacci and isinstance(fib_source, FibonacciRetracement):
             hi = format_chart_index(fib_source.swing_high_date, chart_spec)
             lo = format_chart_index(fib_source.swing_low_date, chart_spec)
@@ -630,8 +613,6 @@ def main() -> None:
             spec=chart_spec,
             fib_unit=chart_spec.fib_unit,
             fib_chart_mode=fib_mode if show_fibonacci else None,
-            fib_manual=show_fibonacci and fib_anchor_mode == "manual",
-            fib_source=fib_source,
         )
 
     with tab_signal:
