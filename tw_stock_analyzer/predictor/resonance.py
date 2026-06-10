@@ -11,7 +11,11 @@ from tw_stock_analyzer.indicators.fibonacci import (
     FIB_TOLERANCE_PCT,
     FibonacciRetracement,
     compute_fibonacci_retracement,
-    is_near_fib_level,
+    evaluate_fib382_reaction,
+    evaluate_fib618_reaction,
+    format_fib382_reaction_detail,
+    format_fib618_reaction_detail,
+    get_fib_level_price,
 )
 
 
@@ -81,21 +85,68 @@ def compute_bullish_resonance(
         else f"帶寬 {width_now:.3f} ≤ 前日 {width_prev:.3f}"
     )
 
-    fib_ok = (
-        fib is not None
-        and fib.trend == "上升"
-        and is_near_fib_level(close, fib, "38.2%", tolerance_pct=FIB_TOLERANCE_PCT)
-    )
-    if fib_ok:
-        level_382 = next(l.price for l in fib.levels if l.label == "38.2%")
-        fib_detail = f"收 {close:,.0f} 踩在 38.2% 支撐 {level_382:,.0f}"
-    elif fib is None:
+    fib_ok = False
+    fib_detail = ""
+    if fib is None:
         fib_detail = "無法計算 Fib 波段"
     elif fib.trend != "上升":
-        fib_detail = f"波段為 {fib.trend}（需上升回撤至 38.2%）"
+        fib_detail = f"波段為 {fib.trend}（需上升回撤至 Fib 支撐）"
     else:
-        level_382 = next(l.price for l in fib.levels if l.label == "38.2%")
-        fib_detail = f"收 {close:,.0f} · 38.2% 支撐 {level_382:,.0f}（需 ±{FIB_TOLERANCE_PCT:.1%} 內）"
+        reaction_382 = evaluate_fib382_reaction(
+            df,
+            latest,
+            prev,
+            fib,
+            tolerance_pct=FIB_TOLERANCE_PCT,
+            volume_ratio_min=volume_ratio_min,
+        )
+        reaction_618 = evaluate_fib618_reaction(
+            latest,
+            prev,
+            fib,
+            tolerance_pct=FIB_TOLERANCE_PCT,
+            volume_ratio_min=volume_ratio_min,
+        )
+        level_382 = get_fib_level_price(fib, "38.2%")
+        level_618 = get_fib_level_price(fib, "61.8%")
+        level_786 = get_fib_level_price(fib, "78.6%")
+
+        if reaction_382.passes:
+            fib_ok = True
+            fib_detail = format_fib382_reaction_detail(
+                reaction_382,
+                level_382=level_382,
+                close=close,
+            )
+        elif reaction_618.passes:
+            fib_ok = True
+            fib_detail = format_fib618_reaction_detail(
+                reaction_618,
+                level_618=level_618,
+                level_786=level_786,
+                close=close,
+            )
+        elif reaction_382.at_zone:
+            fib_detail = format_fib382_reaction_detail(
+                reaction_382,
+                level_382=level_382,
+                close=close,
+            )
+        elif reaction_618.at_zone:
+            fib_detail = format_fib618_reaction_detail(
+                reaction_618,
+                level_618=level_618,
+                level_786=level_786,
+                close=close,
+            )
+        else:
+            fib_detail = (
+                f"收 {close:,.0f} · 38.2% 支撐 {level_382:,.0f} · "
+                f"61.8% 支撐 {level_618:,.0f} · "
+                f"78.6% 止損 {level_786:,.0f}（需 ±{FIB_TOLERANCE_PCT:.1%} 內；"
+                f"38.2% 需強勢趨勢+缩量+K線反轉+放量；"
+                f"61.8% 需長下影/吞沒/放量至少 2 項且未破 78.6%）"
+            )
 
     rsi = float(latest["rsi_14"])
     rsi_ok = rsi >= 50
@@ -119,7 +170,7 @@ def compute_bullish_resonance(
         ResonanceItem("成交量放量確認", vol_ok, vol_detail),
         ResonanceItem("均線多頭排列，方向向上", ma_ok, ma_detail),
         ResonanceItem("布林帶開口", bb_ok, bb_detail),
-        ResonanceItem("價格踩在 Fib 38.2% 支撐", fib_ok, fib_detail),
+        ResonanceItem("Fib 支撐（38.2% 或 61.8% 真反应）", fib_ok, fib_detail),
         ResonanceItem("RSI 守住 50 生命線", rsi_ok, rsi_detail),
         ResonanceItem("MACD 金叉，能量柱轉正", macd_ok, macd_detail),
     )
