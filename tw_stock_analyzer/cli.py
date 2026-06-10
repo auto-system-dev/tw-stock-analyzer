@@ -13,7 +13,7 @@ from tw_stock_analyzer.analyzer.engine import StockAnalyzer
 from tw_stock_analyzer.backtest.engine import BacktestEngine
 from tw_stock_analyzer.notifications.resonance_alert import (
     format_resonance_telegram_message,
-    scan_resonance_hits,
+    scan_resonance_with_summary,
 )
 from tw_stock_analyzer.notifications.telegram import TelegramConfigError, send_telegram_message
 from tw_stock_analyzer.screener.engine import ScreenerEngine
@@ -338,6 +338,13 @@ def screen_cmd(
     help="掃描用的歷史資料期間",
 )
 @click.option(
+    "--batch-size",
+    default=50,
+    show_default=True,
+    type=click.IntRange(10, 200),
+    help="全市場掃描每批檔數（分批掃描後合併結果）",
+)
+@click.option(
     "--dry-run",
     is_flag=True,
     default=False,
@@ -354,29 +361,58 @@ def notify_resonance_cmd(
     symbols: str,
     min_resonance: int,
     period: str,
+    batch_size: int,
     dry_run: bool,
     notify_empty: bool,
 ) -> None:
     """掃描多頭共振並發送 Telegram，例如：tw-stock notify-resonance --min-resonance 5"""
     sym_list = [s.strip() for s in symbols.split(",") if s.strip()] or None
     _, universe_label = get_universe(universe.lower(), sym_list)
+    u = universe.lower()
+
+    def on_progress(scanned: int, total: int, batch_index: int) -> None:
+        console.print(
+            f"[dim]批次 {batch_index} 完成 · 已掃 {scanned}/{total} 檔[/dim]"
+        )
 
     try:
-        with console.status("[bold green]掃描多頭共振…"):
-            hits = scan_resonance_hits(
-                universe=universe.lower(),
+        if u == "all" and not sym_list:
+            console.print(
+                f"[cyan]全市場分批掃描（每批 {batch_size} 檔），完成後合併結果…[/cyan]"
+            )
+            summary = scan_resonance_with_summary(
+                universe=u,
                 symbols=sym_list,
                 min_passed=min_resonance,
                 period=period,
+                batch_size=batch_size,
+                on_progress=on_progress,
             )
+        else:
+            with console.status("[bold green]掃描多頭共振…"):
+                summary = scan_resonance_with_summary(
+                    universe=u,
+                    symbols=sym_list,
+                    min_passed=min_resonance,
+                    period=period,
+                    batch_size=batch_size,
+                )
+        hits = list(summary.hits)
     except Exception as e:
         console.print(f"[red]錯誤：{e}[/red]")
         raise SystemExit(1) from e
+
+    console.print(
+        f"[green]掃描完成：{summary.scanned_count}/{summary.total_count} 檔"
+        f" · {summary.batch_count} 批 · 符合 {len(hits)} 檔[/green]"
+    )
 
     message = format_resonance_telegram_message(
         hits,
         min_passed=min_resonance,
         universe_label=universe_label,
+        scanned_count=summary.scanned_count,
+        total_count=summary.total_count,
     )
     console.print(message)
 
