@@ -145,7 +145,7 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, str, s
                 st.caption("已填自訂代號時，僅掃描這些股票，股票池下拉選單會被覆蓋。")
             elif screen_opts["universe"] == "all":
                 st.caption(
-                    "全市場掃描較久且上限 120 檔；建議改用常用股或自訂 3～10 檔代號。"
+                    "全市場將分批掃描完整清單（每批 50 檔），耗時較長，請保持頁面開啟。"
                 )
             screen_opts["top_n"] = st.slider("Top N", 5, 30, 10)
             screen_opts["min_score"] = st.slider("最低綜合分", 0, 80, 0, step=5)
@@ -401,8 +401,8 @@ def render_screener_page(screen_opts: dict) -> None:
         return
 
     st.success(
-        f"{result.universe_label} · 掃描 {result.scanned_count} 檔 · "
-        f"深度 {result.deep_scanned_count} 檔 · 符合 {len(result.ranked)} 檔"
+        f"{result.universe_label} · 掃描 {result.scanned_count}/{result.universe_total or result.scanned_count} 檔"
+        f" · 深度 {result.deep_scanned_count} 檔 · 符合 {len(result.ranked)} 檔"
     )
     for note in result.notes:
         st.caption(note)

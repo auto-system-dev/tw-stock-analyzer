@@ -24,9 +24,14 @@ from tw_stock_analyzer.screener.filters import ScreenerFilters
 from tw_stock_analyzer.screener.models import RankedStock, ScreenerResult
 from tw_stock_analyzer.screener.universe import get_universe, resolve_name
 
+# 全市場分批掃描每批檔數（儀表板 / CLI 共用）
+SCREENER_BATCH_SIZE = 50
 
-# 網頁全市場掃描上限，避免 Streamlit WebSocket 逾時
-MAX_ALL_MARKET_SCAN = 120
+FastRow = tuple[str, int, dict[str, str], pd.Series, pd.DataFrame]
+
+
+def _chunked(items: list[str], size: int) -> list[list[str]]:
+    return [items[i : i + size] for i in range(0, len(items), size)]
 
 
 class ScreenerEngine:
@@ -38,12 +43,14 @@ class ScreenerEngine:
         period: str = "1y",
         institutional_days: int = 5,
         lightweight_deep: bool = False,
+        batch_size: int = SCREENER_BATCH_SIZE,
     ):
         self.fetcher = StockFetcher()
         self.indicators = TechnicalIndicators()
         self.market = MarketContextProvider(institutional_days=institutional_days)
         self.period = period
         self.lightweight_deep = lightweight_deep
+        self.batch_size = batch_size
 
     def _fast_score(self, latest: pd.Series, signals: dict[str, str]) -> int:
         """快速分：技術規則 + 動能（不含 ML 與 API）。"""
@@ -69,6 +76,32 @@ class ScreenerEngine:
 
         return base + min(15, momentum)
 
+    def _fast_scan_ids(
+        self,
+        stock_ids: list[str],
+        *,
+        progress: Callable[[str, int, int], None] | None,
+        progress_offset: int,
+        progress_total: int,
+    ) -> list[FastRow]:
+        rows: list[FastRow] = []
+        for local_idx, stock_id in enumerate(stock_ids, start=1):
+            global_idx = progress_offset + local_idx
+            if progress:
+                progress("fast", global_idx, progress_total)
+            try:
+                raw = self.fetcher.fetch(stock_id, period=self.period)
+                enriched = self.indicators.compute(raw)
+                if enriched.empty:
+                    continue
+                latest = enriched.iloc[-1]
+                signals = rule_signals_from_row(latest)
+                fast = self._fast_score(latest, signals)
+                rows.append((stock_id, fast, signals, latest, enriched))
+            except Exception:
+                continue
+        return rows
+
     def scan(
         self,
         universe: str = "watchlist",
@@ -80,37 +113,40 @@ class ScreenerEngine:
         flt = filters or ScreenerFilters()
         stock_ids, label = get_universe(universe, symbols)
         notes: list[str] = []
+        universe_total = len(stock_ids)
 
         if symbols:
             notes.append(f"已使用自訂代號（{len(stock_ids)} 檔），股票池設定已覆蓋")
 
-        if universe == "all" and not symbols and len(stock_ids) > MAX_ALL_MARKET_SCAN:
-            stock_ids = stock_ids[:MAX_ALL_MARKET_SCAN]
+        use_batches = (
+            universe == "all"
+            and not symbols
+            and universe_total > self.batch_size
+        )
+        batches = (
+            _chunked(stock_ids, self.batch_size) if use_batches else [stock_ids]
+        )
+        if use_batches:
             notes.append(
-                f"全市場掃描上限 {MAX_ALL_MARKET_SCAN} 檔（避免連線逾時），"
-                "建議改用常用股或自訂代號"
+                f"全市場分批掃描（每批 {self.batch_size} 檔，共 {len(batches)} 批），"
+                f"預計需 {universe_total} 檔 × 數秒，請耐心等候"
             )
 
         if universe == "all" and "備援" in label:
             notes.append("FinMind 全市場清單不可用，已改用常用股清單")
 
-        fast_rows: list[tuple[str, int, dict[str, str], pd.Series, pd.DataFrame]] = []
-        total = len(stock_ids)
-
-        for idx, stock_id in enumerate(stock_ids, start=1):
-            if progress:
-                progress("fast", idx, total)
-            try:
-                raw = self.fetcher.fetch(stock_id, period=self.period)
-                enriched = self.indicators.compute(raw)
-                if enriched.empty:
-                    continue
-                latest = enriched.iloc[-1]
-                signals = rule_signals_from_row(latest)
-                fast = self._fast_score(latest, signals)
-                fast_rows.append((stock_id, fast, signals, latest, enriched))
-            except Exception:
-                continue
+        fast_rows: list[FastRow] = []
+        scanned_offset = 0
+        for batch in batches:
+            fast_rows.extend(
+                self._fast_scan_ids(
+                    batch,
+                    progress=progress,
+                    progress_offset=scanned_offset,
+                    progress_total=universe_total,
+                )
+            )
+            scanned_offset += len(batch)
 
         fast_rows.sort(key=lambda x: x[1], reverse=True)
         candidates = fast_rows[: flt.deep_candidates]
@@ -164,8 +200,10 @@ class ScreenerEngine:
 
         return ScreenerResult(
             universe_label=label,
+            universe_total=universe_total,
             scanned_count=len(fast_rows),
             deep_scanned_count=deep_total,
+            batch_count=len(batches),
             ranked=ranked,
             notes=notes,
         )
