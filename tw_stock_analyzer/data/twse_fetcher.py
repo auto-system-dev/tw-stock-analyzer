@@ -52,6 +52,16 @@ class TwseDailyFetcher:
             raise ValueError(f"TWSE 無 {stock_id} 日線資料。")
 
         df = pd.DataFrame(rows).set_index("date").sort_index()
+        if df.index.duplicated().any():
+            df = df.groupby(level=0).agg(
+                {
+                    "open": "first",
+                    "high": "max",
+                    "low": "min",
+                    "close": "last",
+                    "volume": "sum",
+                }
+            )
         start_cut = start.tz_localize(None) if getattr(start, "tz", None) is not None else start
         df = df.loc[df.index >= start_cut]
         if df.empty:

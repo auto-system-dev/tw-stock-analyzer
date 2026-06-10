@@ -83,6 +83,27 @@ class FibonacciExtension:
 FibOverlay: TypeAlias = FibonacciRetracement | FibonacciExtension
 
 
+def _loc_price(window: pd.DataFrame, date: pd.Timestamp, column: str) -> float:
+    """從 DataFrame 取值；若索引重複導致 Series，依欄位語意聚合。"""
+    value = window.loc[date, column]
+    if isinstance(value, pd.Series):
+        if column == "high":
+            return float(value.max())
+        if column == "low":
+            return float(value.min())
+        return float(value.iloc[-1])
+    return float(value)
+
+
+def _index_pos(index: pd.Index, ts: pd.Timestamp) -> int:
+    loc = index.get_loc(ts)
+    if isinstance(loc, int):
+        return loc
+    if isinstance(loc, slice):
+        return int(loc.start or 0)
+    return int(loc[-1])
+
+
 def _bar_index_for_date(df: pd.DataFrame, ts: pd.Timestamp) -> int:
     target = pd.Timestamp(ts)
     for i, idx in enumerate(df.index):
@@ -107,14 +128,14 @@ def compute_fibonacci_retracement(
     window = df.tail(lookback)
     high_date = window["high"].idxmax()
     low_date = window["low"].idxmin()
-    swing_high = float(window.loc[high_date, "high"])
-    swing_low = float(window.loc[low_date, "low"])
+    swing_high = _loc_price(window, high_date, "high")
+    swing_low = _loc_price(window, low_date, "low")
 
     if swing_high <= swing_low:
         return None
 
-    low_pos = window.index.get_loc(low_date)
-    high_pos = window.index.get_loc(high_date)
+    low_pos = _index_pos(window.index, low_date)
+    high_pos = _index_pos(window.index, high_date)
 
     if low_pos < high_pos:
         trend = "上升"
@@ -151,14 +172,14 @@ def compute_fibonacci_extension(
     window = df.tail(lookback)
     high_date = window["high"].idxmax()
     low_date = window["low"].idxmin()
-    swing_high = float(window.loc[high_date, "high"])
-    swing_low = float(window.loc[low_date, "low"])
+    swing_high = _loc_price(window, high_date, "high")
+    swing_low = _loc_price(window, low_date, "low")
 
     if swing_high <= swing_low:
         return None
 
-    low_pos = int(window.index.get_loc(low_date))
-    high_pos = int(window.index.get_loc(high_date))
+    low_pos = _index_pos(window.index, low_date)
+    high_pos = _index_pos(window.index, high_date)
 
     if low_pos < high_pos:
         trend = "上升"
@@ -170,7 +191,7 @@ def compute_fibonacci_extension(
         if after_impulse.empty:
             return None
         c_date = after_impulse["low"].idxmin()
-        point_c = float(window.loc[c_date, "low"])
+        point_c = _loc_price(window, c_date, "low")
         point_c_date = pd.Timestamp(c_date)
         if point_c >= point_b or point_c <= point_a:
             return None
@@ -189,7 +210,7 @@ def compute_fibonacci_extension(
         if after_impulse.empty:
             return None
         c_date = after_impulse["high"].idxmax()
-        point_c = float(window.loc[c_date, "high"])
+        point_c = _loc_price(window, c_date, "high")
         point_c_date = pd.Timestamp(c_date)
         if point_c <= point_b or point_c >= point_a:
             return None
