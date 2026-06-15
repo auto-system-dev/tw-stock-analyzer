@@ -159,12 +159,24 @@ def compute_bullish_resonance(
     macd_hist = float(latest["macd_hist"])
     macd = float(latest["macd"])
     macd_signal = float(latest["macd_signal"])
-    macd_ok = macd > macd_signal and macd_hist > 0
-    macd_detail = (
-        f"金叉 · 能量柱 {macd_hist:.4f} > 0（轉正）"
-        if macd_ok
-        else f"DIF {macd:.4f} · Signal {macd_signal:.4f} · 能量柱 {macd_hist:.4f}"
-    )
+    macd_prev = float(prev["macd"])
+    macd_signal_prev = float(prev["macd_signal"])
+    # 金叉：DIF（藍線）從下方穿越 Signal（黃線），等同能量柱由 ≤0 轉為 >0
+    macd_ok = macd_prev <= macd_signal_prev and macd > macd_signal
+    if macd_ok:
+        macd_detail = (
+            f"金叉 · DIF {macd:.4f} 上穿 Signal {macd_signal:.4f} · "
+            f"能量柱 {macd_hist:.4f} > 0（轉正）"
+        )
+    elif macd > macd_signal:
+        macd_detail = (
+            f"DIF {macd:.4f} 已在 Signal {macd_signal:.4f} 上方 · "
+            f"能量柱 {macd_hist:.4f}（非本日金叉）"
+        )
+    else:
+        macd_detail = (
+            f"DIF {macd:.4f} · Signal {macd_signal:.4f} · 能量柱 {macd_hist:.4f}"
+        )
 
     items = (
         ResonanceItem("成交量放量確認", vol_ok, vol_detail),

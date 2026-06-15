@@ -104,7 +104,7 @@ class FinMindApiClient:
             return None
 
     def fetch_stock_list(self) -> list[str]:
-        """取得上市股票代號清單（FinMind TaiwanStockInfo）。"""
+        """取得台股 4 位數代號清單（FinMind TaiwanStockInfo：上市/上櫃/興櫃）。"""
         df = self.fetch_dataset("TaiwanStockInfo")
         if df is None or df.empty:
             return []

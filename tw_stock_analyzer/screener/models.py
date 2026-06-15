@@ -33,6 +33,7 @@ class ScreenerResult:
     scanned_count: int
     deep_scanned_count: int
     universe_total: int = 0
+    skipped_count: int = 0
     batch_count: int = 1
     ranked: list[RankedStock] = field(default_factory=list)
     scanned_at: datetime = field(default_factory=datetime.now)

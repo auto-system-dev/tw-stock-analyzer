@@ -22,6 +22,7 @@ from tw_stock_analyzer.predictor.signals import (
 )
 from tw_stock_analyzer.screener.filters import ScreenerFilters
 from tw_stock_analyzer.screener.models import RankedStock, ScreenerResult
+from tw_stock_analyzer.data.stock_market_registry import fetch_stock_market_map
 from tw_stock_analyzer.screener.universe import get_universe, resolve_name
 
 # 全市場分批掃描每批檔數（儀表板 / CLI 共用）
@@ -127,10 +128,19 @@ class ScreenerEngine:
             _chunked(stock_ids, self.batch_size) if use_batches else [stock_ids]
         )
         if use_batches:
+            market_map = fetch_stock_market_map()
+            twse_n = sum(1 for s in stock_ids if market_map.get(s) == "twse")
+            tpex_n = sum(1 for s in stock_ids if market_map.get(s) == "tpex")
+            emerging_n = sum(1 for s in stock_ids if market_map.get(s) == "emerging")
             notes.append(
                 f"全市場分批掃描（每批 {self.batch_size} 檔，共 {len(batches)} 批），"
                 f"預計需 {universe_total} 檔 × 數秒，請耐心等候"
             )
+            if twse_n or tpex_n or emerging_n:
+                notes.append(
+                    f"市場組成：上市 {twse_n}、上櫃 {tpex_n}、興櫃 {emerging_n} 檔"
+                    f"（上櫃/興櫃使用 .TWO 代號）"
+                )
 
         if universe == "all" and "備援" in label:
             notes.append("FinMind 全市場清單不可用，已改用常用股清單")
@@ -198,10 +208,12 @@ class ScreenerEngine:
         ranked.sort(key=lambda r: r.score.total, reverse=True)
         ranked = ranked[: flt.top_n]
 
+        success_count = len(fast_rows)
         return ScreenerResult(
             universe_label=label,
             universe_total=universe_total,
-            scanned_count=len(fast_rows),
+            scanned_count=success_count,
+            skipped_count=max(0, universe_total - success_count),
             deep_scanned_count=deep_total,
             batch_count=len(batches),
             ranked=ranked,

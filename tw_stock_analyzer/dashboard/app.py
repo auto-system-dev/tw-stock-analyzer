@@ -400,8 +400,11 @@ def render_screener_page(screen_opts: dict) -> None:
         st.info("在左側設定股票池與篩選條件，按 **開始掃描**。")
         return
 
+    total = result.universe_total or result.scanned_count
+    skipped = result.skipped_count or max(0, total - result.scanned_count)
     st.success(
-        f"{result.universe_label} · 掃描 {result.scanned_count}/{result.universe_total or result.scanned_count} 檔"
+        f"{result.universe_label} · 成功 {result.scanned_count}/{total} 檔"
+        f"（略過 {skipped} 檔無資料）"
         f" · 深度 {result.deep_scanned_count} 檔 · 符合 {len(result.ranked)} 檔"
     )
     for note in result.notes:

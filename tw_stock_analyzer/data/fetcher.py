@@ -7,8 +7,10 @@ import re
 import pandas as pd
 import yfinance as yf
 
+from tw_stock_analyzer.data.finmind_daily_fetcher import FinMindDailyFetcher
+from tw_stock_analyzer.data.stock_market_registry import is_twse_listed, to_yahoo_symbol
 from tw_stock_analyzer.data.stock_names import resolve_tw_stock_name
-from tw_stock_analyzer.data.symbol_utils import normalize_symbol, to_stock_id
+from tw_stock_analyzer.data.symbol_utils import to_stock_id
 from tw_stock_analyzer.data.twse_fetcher import TwseDailyFetcher
 
 
@@ -32,19 +34,24 @@ class StockFetcher:
         Returns:
             含 open, high, low, close, volume 的 DataFrame
         """
-        if interval == "1d" and self._can_use_twse_daily(symbol):
+        if interval == "1d":
+            if self._can_use_twse_daily(symbol):
+                try:
+                    return TwseDailyFetcher().fetch(symbol, period=period)
+                except Exception:
+                    pass
             try:
-                return TwseDailyFetcher().fetch(symbol, period=period)
+                return self._fetch_yfinance(symbol, period=period, interval=interval)
             except Exception:
-                pass
+                return FinMindDailyFetcher().fetch(symbol, period=period)
         return self._fetch_yfinance(symbol, period=period, interval=interval)
 
     @staticmethod
     def _can_use_twse_daily(symbol: str) -> bool:
         stock_id = to_stock_id(symbol)
-        if ".TWO" in normalize_symbol(symbol).upper():
+        if not re.fullmatch(r"\d{4,6}", stock_id):
             return False
-        return bool(re.fullmatch(r"\d{4,6}", stock_id))
+        return is_twse_listed(symbol)
 
     def _fetch_yfinance(
         self,
@@ -52,7 +59,7 @@ class StockFetcher:
         period: str,
         interval: str,
     ) -> pd.DataFrame:
-        ticker = normalize_symbol(symbol)
+        ticker = to_yahoo_symbol(symbol)
         raw = yf.download(
             ticker,
             period=period,
@@ -88,7 +95,7 @@ class StockFetcher:
 
     def fetch_info(self, symbol: str) -> dict:
         """取得股票基本資訊（名稱、產業等）。"""
-        ticker = normalize_symbol(symbol)
+        ticker = to_yahoo_symbol(symbol)
         info = yf.Ticker(ticker).info
         yf_name = info.get("longName") or info.get("shortName", "—")
         return {

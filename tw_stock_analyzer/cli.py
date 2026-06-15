@@ -257,7 +257,8 @@ def screen_cmd(
     console.print(
         Panel(
             f"股票池：{result.universe_label}\n"
-            f"成功掃描 {result.scanned_count}/{result.universe_total or result.scanned_count} 檔 · "
+            f"成功 {result.scanned_count}/{result.universe_total or result.scanned_count} 檔"
+            f"（略過 {result.skipped_count or max(0, (result.universe_total or result.scanned_count) - result.scanned_count)} 檔無資料） · "
             f"深度評分 {result.deep_scanned_count} 檔 · "
             f"符合條件 {len(result.ranked)} 檔",
             title="潛力股掃描",
