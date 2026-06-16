@@ -312,9 +312,9 @@ def build_fib_anchor_config(
 
 @dataclass(frozen=True)
 class Fib382Reaction:
-    """38.2% 支撐區的進場確認（強勢趨勢 + 缩量回調 + K 線反轉 + 放量上攻）。"""
+    """38.2% 以上進場確認（強勢趨勢 + 缩量回調 + K 線反轉 + 放量上攻）。"""
 
-    at_zone: bool
+    above_level: bool
     strong_trend: bool
     pullback_shrink: bool
     reversal: bool
@@ -323,7 +323,7 @@ class Fib382Reaction:
     @property
     def passes(self) -> bool:
         return (
-            self.at_zone
+            self.above_level
             and self.strong_trend
             and self.pullback_shrink
             and self.reversal
@@ -333,10 +333,9 @@ class Fib382Reaction:
 
 @dataclass(frozen=True)
 class Fib618Reaction:
-    """61.8% 支撐區的真反应跡象（對應常見斐波那契進場確認）。"""
+    """61.8% 以上真反应跡象（長下影 / 吞沒 / 放量至少 2 項）。"""
 
-    at_zone: bool
-    above_stop: bool
+    above_level: bool
     pin_bar: bool
     engulfing: bool
     volume_spike: bool
@@ -347,7 +346,7 @@ class Fib618Reaction:
 
     @property
     def passes(self) -> bool:
-        return self.at_zone and self.above_stop and self.reaction_score >= 2
+        return self.above_level and self.reaction_score >= 2
 
 
 def get_fib_level_price(fib: FibonacciRetracement, label: str) -> float:
@@ -395,6 +394,43 @@ def is_bullish_engulfing(prev: pd.Series, latest: pd.Series) -> bool:
     if pc >= po or lc <= lo:
         return False
     return lo <= pc and lc >= po
+
+
+def _is_bullish_hammer(row: pd.Series) -> bool:
+    """錘子線：下影線長、上影線短、收盤偏上（不限定支撐價位）。"""
+    o, h, l, c = (float(row[k]) for k in ("open", "high", "low", "close"))
+    total_range = h - l
+    if total_range <= 0:
+        return False
+    body = abs(c - o)
+    lower_shadow = min(o, c) - l
+    upper_shadow = h - max(o, c)
+    mid = (h + l) / 2
+    if c < mid:
+        return False
+    if body > 0:
+        return lower_shadow >= body * 2 and upper_shadow <= body
+    return lower_shadow >= upper_shadow * 2
+
+
+def is_bullish_reversal_candle(prev: pd.Series, latest: pd.Series) -> bool:
+    """K 線反轉：錘子線或看漲吞沒。"""
+    return _is_bullish_hammer(latest) or is_bullish_engulfing(prev, latest)
+
+
+def _is_long_lower_shadow(row: pd.Series) -> bool:
+    """長下影線：下影線顯著長於實體（不限定支撐價位）。"""
+    o, h, l, c = (float(row[k]) for k in ("open", "high", "low", "close"))
+    total_range = h - l
+    if total_range <= 0:
+        return False
+    body = abs(c - o)
+    lower_shadow = min(o, c) - l
+    if lower_shadow < total_range * 0.5:
+        return False
+    if body > 0 and lower_shadow < body * 1.5:
+        return False
+    return lower_shadow >= body or body == 0
 
 
 def is_hammer_at_support(
@@ -475,17 +511,15 @@ def evaluate_fib382_reaction(
     prev: pd.Series,
     fib: FibonacciRetracement,
     *,
-    tolerance_pct: float = FIB_TOLERANCE_PCT,
     volume_ratio_min: float = 1.2,
 ) -> Fib382Reaction:
-    """評估 38.2% 附近是否具備圖示進場確認信號。"""
+    """評估價格在 38.2% 以上是否具備進場確認信號。"""
     level_382 = get_fib_level_price(fib, "38.2%")
-    at_zone = _touches_fib_zone(latest, level_382, tolerance_pct=tolerance_pct)
+    close = float(latest["close"])
+    above_level = close >= level_382
     strong_trend = _has_strong_uptrend(latest, fib)
     pullback_shrink = _retracement_volume_shrink(df, fib)
-    reversal = is_bullish_reversal_at_support(
-        prev, latest, level_382, tolerance_pct=tolerance_pct
-    )
+    reversal = is_bullish_reversal_candle(prev, latest)
     vol_ratio = float(latest.get("volume_ratio_5d", 1.0))
     prev_vol = float(prev.get("volume", 0))
     latest_vol = float(latest.get("volume", 0))
@@ -493,7 +527,7 @@ def evaluate_fib382_reaction(
         prev_vol > 0 and latest_vol >= prev_vol * 1.2
     )
     return Fib382Reaction(
-        at_zone=at_zone,
+        above_level=above_level,
         strong_trend=strong_trend,
         pullback_shrink=pullback_shrink,
         reversal=reversal,
@@ -518,8 +552,8 @@ def format_fib382_reaction_detail(
     ]
     if reaction.passes:
         return f"收 {close:,.0f} · " + " · ".join(parts) + "（38.2% 確認）"
-    if not reaction.at_zone:
-        return f"收 {close:,.0f} · 未在 38.2% ±{FIB_TOLERANCE_PCT:.1%} 區"
+    if not reaction.above_level:
+        return f"收 {close:,.0f} · 低於 38.2% 支撐 {level_382:,.0f}"
     return f"收 {close:,.0f} · " + " · ".join(parts) + "（需全項確認）"
 
 
@@ -528,16 +562,13 @@ def evaluate_fib618_reaction(
     prev: pd.Series,
     fib: FibonacciRetracement,
     *,
-    tolerance_pct: float = FIB_TOLERANCE_PCT,
     volume_ratio_min: float = 1.2,
 ) -> Fib618Reaction:
-    """評估價格在 61.8% 附近是否出現止跌真反应。"""
+    """評估價格在 61.8% 以上是否出現止跌真反应。"""
     level_618 = get_fib_level_price(fib, "61.8%")
-    level_786 = get_fib_level_price(fib, "78.6%")
     close = float(latest["close"])
-    at_zone = _touches_fib_zone(latest, level_618, tolerance_pct=tolerance_pct)
-    above_stop = close > level_786
-    pin_bar = is_pin_bar_at_support(latest, level_618, tolerance_pct=tolerance_pct)
+    above_level = close >= level_618
+    pin_bar = _is_long_lower_shadow(latest)
     engulfing = is_bullish_engulfing(prev, latest)
     vol_ratio = float(latest.get("volume_ratio_5d", 1.0))
     prev_vol = float(prev.get("volume", 0))
@@ -546,8 +577,7 @@ def evaluate_fib618_reaction(
         prev_vol > 0 and latest_vol >= prev_vol * 1.2
     )
     return Fib618Reaction(
-        at_zone=at_zone,
-        above_stop=above_stop,
+        above_level=above_level,
         pin_bar=pin_bar,
         engulfing=engulfing,
         volume_spike=volume_spike,
@@ -558,7 +588,6 @@ def format_fib618_reaction_detail(
     reaction: Fib618Reaction,
     *,
     level_618: float,
-    level_786: float,
     close: float,
 ) -> str:
     """格式化 61.8% 真反应檢查說明。"""
@@ -568,12 +597,11 @@ def format_fib618_reaction_detail(
         f"長下影 {mark(reaction.pin_bar)}",
         f"吞沒 {mark(reaction.engulfing)}",
         f"放量 {mark(reaction.volume_spike)}",
-        f"未破 78.6% ({level_786:,.0f}) {mark(reaction.above_stop)}",
     ]
     if reaction.passes:
         return f"收 {close:,.0f} · " + " · ".join(parts) + "（真反应確認）"
-    if not reaction.at_zone:
-        return f"收 {close:,.0f} · 未在 61.8% ±{FIB_TOLERANCE_PCT:.1%} 區"
+    if not reaction.above_level:
+        return f"收 {close:,.0f} · 低於 61.8% 支撐 {level_618:,.0f}"
     return f"收 {close:,.0f} · " + " · ".join(parts) + "（需至少 2 項止跌跡象）"
 
 
