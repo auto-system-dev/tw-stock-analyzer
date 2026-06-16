@@ -21,6 +21,7 @@ from tw_stock_analyzer.indicators.fibonacci import (
 BB_MIDDLE_RISE_DAYS = 3
 BB_BREAKOUT_LOOKBACK = 20
 BB_UPPER_TOLERANCE_PCT = 0.005
+MACD_HIST_EXPAND_DAYS = 2
 
 
 @dataclass(frozen=True)
@@ -124,6 +125,61 @@ def _bb_middle_rising(
     return True, f"中軌連續 {days} 日上升（{first_m:,.0f} → {last_m:,.0f}）"
 
 
+def _macd_golden_cross(latest: pd.Series, prev: pd.Series) -> tuple[bool, str]:
+    """本日 DIF 從 Signal 下方穿越至上方。"""
+    macd = float(latest["macd"])
+    macd_signal = float(latest["macd_signal"])
+    macd_prev = float(prev["macd"])
+    macd_signal_prev = float(prev["macd_signal"])
+    ok = macd_prev <= macd_signal_prev and macd > macd_signal
+    if ok:
+        return True, f"金叉 · DIF {macd:.4f} 上穿 Signal {macd_signal:.4f}"
+    if macd > macd_signal:
+        return (
+            False,
+            f"非本日金叉（DIF {macd:.4f} 已在 Signal {macd_signal:.4f} 上方）",
+        )
+    return False, f"未金叉（DIF {macd:.4f} · Signal {macd_signal:.4f}）"
+
+
+def _macd_hist_expanding(
+    df: pd.DataFrame,
+    *,
+    days: int = MACD_HIST_EXPAND_DAYS,
+) -> tuple[bool, str]:
+    """能量柱連續 N 日放大（逐日遞增）。"""
+    need = days + 1
+    if len(df) < need:
+        return False, f"資料不足（需 {need} 日）"
+
+    hist = df.tail(need)["macd_hist"].astype(float)
+    for i in range(1, len(hist)):
+        if hist.iloc[i] <= hist.iloc[i - 1]:
+            prev_h = hist.iloc[i - 1]
+            cur_h = hist.iloc[i]
+            return False, f"能量柱未連續放大（{prev_h:.4f} → {cur_h:.4f}）"
+
+    first_h = hist.iloc[0]
+    last_h = hist.iloc[-1]
+    return True, f"能量柱連續 {days} 日放大（{first_h:.4f} → {last_h:.4f}）"
+
+
+def _macd_above_zero(latest: pd.Series) -> tuple[bool, str]:
+    """DIF 與 Signal 均在 0 軸上方。"""
+    macd = float(latest["macd"])
+    macd_signal = float(latest["macd_signal"])
+    ok = macd > 0 and macd_signal > 0
+    if ok:
+        return True, f"快慢線在 0 軸上方（DIF {macd:.4f} · Signal {macd_signal:.4f}）"
+
+    parts: list[str] = []
+    if macd <= 0:
+        parts.append(f"DIF {macd:.4f} ≤ 0")
+    if macd_signal <= 0:
+        parts.append(f"Signal {macd_signal:.4f} ≤ 0")
+    return False, " · ".join(parts)
+
+
 def compute_bullish_resonance(
     df: pd.DataFrame,
     fib: FibonacciRetracement | None = None,
@@ -132,6 +188,7 @@ def compute_bullish_resonance(
     bb_middle_rise_days: int = BB_MIDDLE_RISE_DAYS,
     bb_breakout_lookback: int = BB_BREAKOUT_LOOKBACK,
     bb_upper_tolerance_pct: float = BB_UPPER_TOLERANCE_PCT,
+    macd_hist_expand_days: int = MACD_HIST_EXPAND_DAYS,
 ) -> BullishResonance:
     """檢查六項多頭共振條件（以最新交易日為準）。"""
     if len(df) < 2:
@@ -247,27 +304,11 @@ def compute_bullish_resonance(
         else f"RSI {rsi:.1f} < 50（未守住生命線）"
     )
 
-    macd_hist = float(latest["macd_hist"])
-    macd = float(latest["macd"])
-    macd_signal = float(latest["macd_signal"])
-    macd_prev = float(prev["macd"])
-    macd_signal_prev = float(prev["macd_signal"])
-    # 金叉：DIF（藍線）從下方穿越 Signal（黃線），等同能量柱由 ≤0 轉為 >0
-    macd_ok = macd_prev <= macd_signal_prev and macd > macd_signal
-    if macd_ok:
-        macd_detail = (
-            f"金叉 · DIF {macd:.4f} 上穿 Signal {macd_signal:.4f} · "
-            f"能量柱 {macd_hist:.4f} > 0（轉正）"
-        )
-    elif macd > macd_signal:
-        macd_detail = (
-            f"DIF {macd:.4f} 已在 Signal {macd_signal:.4f} 上方 · "
-            f"能量柱 {macd_hist:.4f}（非本日金叉）"
-        )
-    else:
-        macd_detail = (
-            f"DIF {macd:.4f} · Signal {macd_signal:.4f} · 能量柱 {macd_hist:.4f}"
-        )
+    cross_ok, cross_detail = _macd_golden_cross(latest, prev)
+    expand_ok, expand_detail = _macd_hist_expanding(df, days=macd_hist_expand_days)
+    zero_ok, zero_detail = _macd_above_zero(latest)
+    macd_ok = cross_ok and expand_ok and zero_ok
+    macd_detail = f"{cross_detail} · {expand_detail} · {zero_detail}"
 
     items = (
         ResonanceItem("成交量放量確認", vol_ok, vol_detail),
@@ -275,7 +316,7 @@ def compute_bullish_resonance(
         ResonanceItem("布林帶開口", bb_ok, bb_detail),
         ResonanceItem("Fib 支撐（38.2% 或 61.8% 真反应）", fib_ok, fib_detail),
         ResonanceItem("RSI 守住 50 生命線", rsi_ok, rsi_detail),
-        ResonanceItem("MACD 金叉，能量柱轉正", macd_ok, macd_detail),
+        ResonanceItem("MACD 金叉，能量柱連續放大，0 軸上方", macd_ok, macd_detail),
     )
     passed = sum(1 for item in items if item.passed)
     return BullishResonance(items=items, passed_count=passed, total=len(items))
