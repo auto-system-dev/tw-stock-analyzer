@@ -10,22 +10,22 @@ from tw_stock_analyzer.data.shareholding import ShareholdingProvider
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _load_over_1000_ratio_history(symbol: str) -> bytes | None:
+def _load_over_1000_ratio_history(symbol: str) -> pd.DataFrame | None:
     """快取集保千張大戶比例（每週更新，快取 1 小時）。"""
     df = ShareholdingProvider(weeks=26).fetch_over_1000_ratio_history(symbol)
     if df is None or df.empty:
         return None
-    return df.to_json(orient="records", date_format="iso").encode()
+    return df.copy()
 
 
 def render_over_1000_ratio_chart(symbol: str, *, chart_key: str) -> None:
     """持股 1000 張以上比例走勢圖。"""
-    raw = _load_over_1000_ratio_history(symbol)
-    if raw is None:
+    df = _load_over_1000_ratio_history(symbol)
+    if df is None:
         st.caption("未取得集保戶股權分散資料，千張大戶比例圖暫無法顯示。")
         return
 
-    df = pd.read_json(raw.decode(), orient="records")
+    df = df.copy()
     df["date"] = pd.to_datetime(df["date"])
     latest = df["date"].max()
     st.caption(
