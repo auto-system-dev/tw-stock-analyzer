@@ -273,8 +273,8 @@ def _add_price_traces(
         )
 
 
-def _weekly_share_colors(values: pd.Series) -> list[str]:
-    """週柱紅漲綠跌、持平灰色（玩股網風格）。"""
+def _share_bar_colors(values: pd.Series) -> list[str]:
+    """柱狀紅漲綠跌、持平灰色。"""
     colors: list[str] = []
     prev: float | None = None
     for v in values:
@@ -302,7 +302,7 @@ def _add_over_1000_ratio_panel(
     xaxis_is_ordinal: bool,
 ) -> None:
     values = ratio.astype(float)
-    colors = _weekly_share_colors(values)
+    colors = _share_bar_colors(values)
     bar_width = ORDINAL_SHARE_BAR_WIDTH if xaxis_is_ordinal else None
     fig.add_trace(
         go.Bar(
@@ -343,7 +343,6 @@ def build_combined_chart(
     fib_unit: str = "日",
     fib_margin: bool = False,
     over_1000_ratio: pd.Series | None = None,
-    over_1000_weekly: pd.Series | None = None,
 ) -> go.Figure:
     """K 線 + 成交量 + RSI + MACD (+ 千張大戶比例) 合併圖（含十字游標）。"""
     chart_spec = spec or TIMEFRAME_SPECS["日線"]
@@ -351,7 +350,6 @@ def build_combined_chart(
     x_coords = xaxis.coords
     has_share = over_1000_ratio is not None and over_1000_ratio.notna().any()
     n_rows = 5 if has_share else 4
-    weekly_bars = over_1000_weekly if over_1000_weekly is not None else over_1000_ratio
     latest_share = (
         float(over_1000_ratio.dropna().iloc[-1]) if has_share else None
     )
@@ -485,11 +483,11 @@ def build_combined_chart(
     fig.update_yaxes(title_text="量（張）", row=2, col=1)
     fig.update_yaxes(title_text="RSI", row=3, col=1, range=[0, 100])
     fig.update_yaxes(title_text="MACD", row=4, col=1)
-    if has_share and weekly_bars is not None:
+    if has_share:
         _add_over_1000_ratio_panel(
             fig,
             x_coords,
-            weekly_bars,
+            over_1000_ratio,
             row=5,
             xaxis_is_ordinal=xaxis.is_ordinal,
         )

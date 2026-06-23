@@ -113,7 +113,7 @@ def align_over_1000_ratio_to_bars(
     bar_index: pd.DatetimeIndex,
     weekly: pd.DataFrame,
 ) -> pd.Series:
-    """將週更新集保比例對齊至每根 K 線（前向填充，每日同步顯示）。"""
+    """將週更新集保比例前向填充至每根 K 線（每日一根柱、十字線同步）。"""
     if weekly is None or weekly.empty:
         return pd.Series(index=bar_index, dtype=float)
 
@@ -126,23 +126,3 @@ def align_over_1000_ratio_to_bars(
     w["bar_date"] = pd.to_datetime(w["bar_date"]).dt.normalize()
     merged = pd.merge_asof(bars, w, on="bar_date", direction="backward")
     return merged["over_1000_ratio"].set_axis(bar_index)
-
-
-def align_weekly_ratio_bars(
-    bar_index: pd.DatetimeIndex,
-    weekly: pd.DataFrame,
-) -> pd.Series:
-    """僅在集保公告日對應的 K 線位置繪製週柱（與玩股網相同頻率）。"""
-    weekly_only = pd.Series(float("nan"), index=bar_index, dtype=float)
-    if weekly is None or weekly.empty:
-        return weekly_only
-
-    bar_dates = pd.to_datetime(bar_index).normalize()
-    for _, row in weekly.sort_values("date").iterrows():
-        wdate = pd.to_datetime(row["date"]).normalize()
-        on_or_after = bar_index[bar_dates >= wdate]
-        if len(on_or_after):
-            weekly_only.loc[on_or_after[0]] = float(row["ratio"])
-        else:
-            weekly_only.iloc[-1] = float(row["ratio"])
-    return weekly_only

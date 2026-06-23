@@ -12,10 +12,7 @@ import streamlit.components.v1 as components
 
 from tw_stock_analyzer.dashboard.charts import _build_chart_xaxis, build_combined_chart
 from tw_stock_analyzer.dashboard.shareholding_chart import _load_over_1000_ratio_history
-from tw_stock_analyzer.data.shareholding import (
-    align_over_1000_ratio_to_bars,
-    align_weekly_ratio_bars,
-)
+from tw_stock_analyzer.data.shareholding import align_over_1000_ratio_to_bars
 from tw_stock_analyzer.indicators.chart_timeframe import (
     ChartTimeframeSpec,
     TIMEFRAME_SPECS,
@@ -962,12 +959,10 @@ def render_interactive_chart(
     xaxis = _build_chart_xaxis(df, chart_spec)
     chart_df = df
     over_1000_ratio = None
-    over_1000_weekly = None
     if symbol:
         weekly = _load_over_1000_ratio_history(symbol)
         if weekly is not None and not weekly.empty:
             over_1000_ratio = align_over_1000_ratio_to_bars(df.index, weekly)
-            over_1000_weekly = align_weekly_ratio_bars(df.index, weekly)
             chart_df = df.copy()
             chart_df["over_1000_ratio"] = over_1000_ratio
     fib_config_json: str | None = None
@@ -1012,7 +1007,6 @@ def render_interactive_chart(
         fib_unit=fib_unit,
         fib_margin=fib_manual,
         over_1000_ratio=over_1000_ratio,
-        over_1000_weekly=over_1000_weekly,
     )
     hover_map, default_key = build_hover_data(chart_df, chart_spec)
     fig_json = pio.to_json(fig)
