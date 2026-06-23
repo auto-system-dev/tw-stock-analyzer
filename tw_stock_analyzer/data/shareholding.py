@@ -12,7 +12,8 @@ import requests
 from tw_stock_analyzer.data.symbol_utils import to_stock_id
 
 TDCC_QRY_URL = "https://www.tdcc.com.tw/portal/zh/smWeb/qryStock"
-TDCC_TIER_OVER_1000 = range(2, 16)  # 1,000 股以上各級距（排除 1-999、合計、差異調整）
+# 集保分級以「股」為單位；千張大戶 = 1,000,001 股以上（第 15 級）
+TDCC_TIER_1000_LOTS = 15
 _REQUEST_GAP_SEC = 0.15
 
 
@@ -62,7 +63,10 @@ def _fetch_ratio_for_date(
     tiers = _parse_tiers(resp.text)
     if not tiers:
         return None
-    return round(sum(pct for tier, pct in tiers if tier in TDCC_TIER_OVER_1000), 4)
+    for tier, pct in tiers:
+        if tier == TDCC_TIER_1000_LOTS:
+            return round(pct, 4)
+    return None
 
 
 class ShareholdingProvider:
@@ -122,3 +126,23 @@ def align_over_1000_ratio_to_bars(
     w["bar_date"] = pd.to_datetime(w["bar_date"]).dt.normalize()
     merged = pd.merge_asof(bars, w, on="bar_date", direction="backward")
     return merged["over_1000_ratio"].set_axis(bar_index)
+
+
+def align_weekly_ratio_bars(
+    bar_index: pd.DatetimeIndex,
+    weekly: pd.DataFrame,
+) -> pd.Series:
+    """僅在集保公告日對應的 K 線位置繪製週柱（與玩股網相同頻率）。"""
+    weekly_only = pd.Series(float("nan"), index=bar_index, dtype=float)
+    if weekly is None or weekly.empty:
+        return weekly_only
+
+    bar_dates = pd.to_datetime(bar_index).normalize()
+    for _, row in weekly.sort_values("date").iterrows():
+        wdate = pd.to_datetime(row["date"]).normalize()
+        on_or_after = bar_index[bar_dates >= wdate]
+        if len(on_or_after):
+            weekly_only.loc[on_or_after[0]] = float(row["ratio"])
+        else:
+            weekly_only.iloc[-1] = float(row["ratio"])
+    return weekly_only
