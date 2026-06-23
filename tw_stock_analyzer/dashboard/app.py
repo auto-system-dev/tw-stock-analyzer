@@ -10,7 +10,6 @@ from tw_stock_analyzer.backtest.engine import ComparisonReport
 from tw_stock_analyzer.dashboard.backtest_service import run_backtest
 from tw_stock_analyzer.dashboard.interactive_chart import render_interactive_chart
 from tw_stock_analyzer.dashboard.equity_chart import build_equity_chart
-from tw_stock_analyzer.dashboard.shareholding_chart import render_over_1000_ratio_chart
 from tw_stock_analyzer.data.market_context import ensure_report_market_context
 from tw_stock_analyzer.dashboard.market_views import render_market_context
 from tw_stock_analyzer.dashboard.screener_service import run_screen_live
@@ -613,16 +612,11 @@ def main() -> None:
         render_interactive_chart(
             display_df,
             f"{report.name}（{report.symbol}）股價與均線",
+            symbol=report.symbol,
             fib=fib_display,
             spec=chart_spec,
             fib_unit=chart_spec.fib_unit,
             fib_chart_mode=fib_mode if show_fibonacci else None,
-        )
-
-        st.divider()
-        render_over_1000_ratio_chart(
-            report.symbol,
-            chart_key=f"over_1000_ratio_{report.symbol}",
         )
 
     with tab_signal:

@@ -11,6 +11,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from tw_stock_analyzer.dashboard.charts import _build_chart_xaxis, build_combined_chart
+from tw_stock_analyzer.dashboard.shareholding_chart import _load_over_1000_ratio_history
+from tw_stock_analyzer.data.shareholding import align_over_1000_ratio_to_bars
 from tw_stock_analyzer.indicators.chart_timeframe import (
     ChartTimeframeSpec,
     TIMEFRAME_SPECS,
@@ -83,6 +85,8 @@ def build_hover_data(
             "sma_fast_label": spec.sma_fast,
             "sma_slow_label": spec.sma_slow,
         }
+        if "over_1000_ratio" in row.index:
+            entry["over_1000_ratio"] = _num(row.get("over_1000_ratio"))
         data_map[key] = entry
         if key != str(bar_index):
             data_map[str(bar_index)] = entry
@@ -185,7 +189,7 @@ def _chart_html(
   #hover-bar .flat {{ color: #94a3b8; }}
   #hover-bar .sep {{ color: #475569; margin: 0 8px; }}
   #hover-bar .label {{ color: #64748b; margin-right: 4px; }}
-  #chart {{ width: 100%; height: 880px; }}
+  #chart {{ width: 100%; height: 1000px; }}
   .js-plotly-plot .hoverlayer {{
     display: none !important;
   }}
@@ -275,6 +279,7 @@ function renderBar(d) {{
     <span><span class="label">SMA${{d.sma_fast_label}}</span>${{fmt(d.sma_fast)}}</span>
     <span class="sep">|</span>
     <span><span class="label">SMA${{d.sma_slow_label}}</span>${{fmt(d.sma_slow)}}</span>
+    ${{d.over_1000_ratio != null ? `<span class="sep">|</span><span><span class="label">千張+</span>${{fmt(d.over_1000_ratio, 2)}}%</span>` : ''}}
   `;
 }}
 
@@ -941,6 +946,7 @@ def render_interactive_chart(
     df: pd.DataFrame,
     title: str,
     *,
+    symbol: str | None = None,
     fib: FibOverlay | None = None,
     spec: ChartTimeframeSpec | None = None,
     fib_unit: str = "日",
@@ -951,6 +957,14 @@ def render_interactive_chart(
     """渲染含頂部資料列的互動圖表。"""
     chart_spec = spec or TIMEFRAME_SPECS["日線"]
     xaxis = _build_chart_xaxis(df, chart_spec)
+    chart_df = df
+    over_1000_ratio = None
+    if symbol:
+        weekly = _load_over_1000_ratio_history(symbol)
+        if weekly is not None and not weekly.empty:
+            over_1000_ratio = align_over_1000_ratio_to_bars(df.index, weekly)
+            chart_df = df.copy()
+            chart_df["over_1000_ratio"] = over_1000_ratio
     fib_config_json: str | None = None
     if fib_manual and fib_source is not None and fib_chart_mode is not None:
         fib_config = build_fib_anchor_config(
@@ -986,15 +1000,18 @@ def render_interactive_chart(
         fib_config_json = json.dumps(fib_config, ensure_ascii=False)
 
     fig = build_combined_chart(
-        df,
+        chart_df,
         title,
         fib=fib,
         spec=chart_spec,
         fib_unit=fib_unit,
         fib_margin=fib_manual,
+        over_1000_ratio=over_1000_ratio,
     )
-    hover_map, default_key = build_hover_data(df, chart_spec)
+    hover_map, default_key = build_hover_data(chart_df, chart_spec)
     fig_json = pio.to_json(fig)
     hover_json = json.dumps(hover_map, ensure_ascii=False)
     html = _chart_html(fig_json, hover_json, default_key, fib_config_json)
-    components.html(html, height=980 if fib_manual else 960, scrolling=True)
+    has_share = over_1000_ratio is not None and over_1000_ratio.notna().any()
+    iframe_h = 1080 if fib_manual else (1060 if has_share else 960)
+    components.html(html, height=iframe_h, scrolling=True)

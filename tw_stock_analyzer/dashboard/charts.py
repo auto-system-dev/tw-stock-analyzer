@@ -23,6 +23,13 @@ from tw_stock_analyzer.indicators.chart_timeframe import (
 
 ORDINAL_VOL_BAR_WIDTH = 0.72
 ORDINAL_MACD_BAR_WIDTH = 0.85
+ORDINAL_SHARE_BAR_WIDTH = 0.72
+
+
+def _xaxis_names(n_rows: int) -> tuple[str, ...]:
+    if n_rows <= 1:
+        return ("xaxis",)
+    return ("xaxis",) + tuple(f"xaxis{i}" for i in range(2, n_rows + 1))
 
 
 @dataclass(frozen=True)
@@ -66,7 +73,7 @@ def _apply_ordinal_axis(fig: go.Figure, xaxis: ChartXAxis, *, n_rows: int = 4) -
         fixedrange=True,
         constrain="domain",
     )
-    axis_names = ("xaxis", "xaxis2", "xaxis3", "xaxis4")
+    axis_names = _xaxis_names(n_rows)
     layout_patch = {"bargap": 0, "bargroupgap": 0}
     for i in range(n_rows):
         style = axis_style.copy()
@@ -266,6 +273,51 @@ def _add_price_traces(
         )
 
 
+def _add_over_1000_ratio_panel(
+    fig: go.Figure,
+    x_coords: list,
+    ratio: pd.Series,
+    *,
+    row: int,
+    xaxis_is_ordinal: bool,
+) -> None:
+    values = ratio.astype(float)
+    prev = values.shift(1)
+    colors = [
+        "#ef4444" if (pd.isna(p) or v >= p) else "#22c55e"
+        for v, p in zip(values, prev)
+    ]
+    bar_width = ORDINAL_SHARE_BAR_WIDTH if xaxis_is_ordinal else None
+    fig.add_trace(
+        go.Bar(
+            x=x_coords,
+            y=values,
+            name="持股1000張以上",
+            width=bar_width,
+            marker=dict(color=colors, line=dict(width=0)),
+            hoverinfo="skip",
+            showlegend=False,
+        ),
+        row=row,
+        col=1,
+    )
+    valid = values.dropna()
+    if valid.empty:
+        return
+    y_min = float(valid.min())
+    y_max = float(valid.max())
+    pad = max((y_max - y_min) * 0.12, 0.5)
+    fig.update_yaxes(
+        title_text="千張%+",
+        row=row,
+        col=1,
+        side="right",
+        range=[max(0, y_min - pad), y_max + pad],
+        ticksuffix="%",
+        tickformat=".1f",
+    )
+
+
 def build_combined_chart(
     df: pd.DataFrame,
     title: str,
@@ -274,18 +326,37 @@ def build_combined_chart(
     spec: ChartTimeframeSpec | None = None,
     fib_unit: str = "日",
     fib_margin: bool = False,
+    over_1000_ratio: pd.Series | None = None,
 ) -> go.Figure:
-    """K 線 + 成交量 + RSI + MACD 合併圖（含十字游標）。"""
+    """K 線 + 成交量 + RSI + MACD (+ 千張大戶比例) 合併圖（含十字游標）。"""
     chart_spec = spec or TIMEFRAME_SPECS["日線"]
     xaxis = _build_chart_xaxis(df, chart_spec)
     x_coords = xaxis.coords
+    has_share = over_1000_ratio is not None and over_1000_ratio.notna().any()
+    n_rows = 5 if has_share else 4
+    latest_share = (
+        float(over_1000_ratio.dropna().iloc[-1]) if has_share else None
+    )
+    share_title = (
+        f"持股1000張以上 ({latest_share:.2f}%)"
+        if latest_share is not None
+        else "持股1000張以上"
+    )
+    row_heights = (
+        [0.40, 0.11, 0.14, 0.14, 0.14] if has_share else [0.48, 0.14, 0.19, 0.19]
+    )
+    subplot_titles = (
+        (None, None, "RSI (14)", "MACD", share_title)
+        if has_share
+        else (None, None, "RSI (14)", "MACD")
+    )
     fig = make_subplots(
-        rows=4,
+        rows=n_rows,
         cols=1,
         shared_xaxes=False,
-        row_heights=[0.48, 0.14, 0.19, 0.19],
+        row_heights=row_heights,
         vertical_spacing=0.03,
-        subplot_titles=(None, None, "RSI (14)", "MACD"),
+        subplot_titles=subplot_titles,
     )
 
     _add_price_traces(fig, df, chart_spec, x_coords, row=1, skip_hover=True)
@@ -374,7 +445,7 @@ def build_combined_chart(
     layout_kwargs: dict = dict(
         title=dict(text=title, x=0.01, xanchor="left", font=dict(size=14)),
         xaxis_rangeslider_visible=False,
-        height=880,
+        height=1000 if has_share else 880,
         margin=dict(l=40, r=88 if show_fib_margin else 20, t=90, b=28),
         legend=dict(
             orientation="h",
@@ -396,9 +467,17 @@ def build_combined_chart(
     fig.update_yaxes(title_text="量（張）", row=2, col=1)
     fig.update_yaxes(title_text="RSI", row=3, col=1, range=[0, 100])
     fig.update_yaxes(title_text="MACD", row=4, col=1)
+    if has_share:
+        _add_over_1000_ratio_panel(
+            fig,
+            x_coords,
+            over_1000_ratio,
+            row=5,
+            xaxis_is_ordinal=xaxis.is_ordinal,
+        )
     fig.update_xaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)")
     fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)")
-    for r in (1, 2, 3, 4):
+    for r in range(1, n_rows + 1):
         fig.update_xaxes(showticklabels=False, row=r, col=1)
     if not fib_margin:
         _add_hover_capture(fig, df, x_coords, 1, "close")
@@ -406,8 +485,11 @@ def build_combined_chart(
     _add_hover_capture(fig, plot_df, x_coords, 2, "_volume_lots")
     _add_hover_capture(fig, df, x_coords, 3, "rsi_14")
     _add_hover_capture(fig, df, x_coords, 4, "macd")
-    _apply_ordinal_axis(fig, xaxis)
-    _apply_crosshair(fig)
+    if has_share:
+        plot_share = df.assign(_over_1000=over_1000_ratio)
+        _add_hover_capture(fig, plot_share, x_coords, 5, "_over_1000")
+    _apply_ordinal_axis(fig, xaxis, n_rows=n_rows)
+    _apply_crosshair(fig, n_rows=n_rows)
     return fig
 
 

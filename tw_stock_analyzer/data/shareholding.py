@@ -103,3 +103,22 @@ class ShareholdingProvider:
         df = pd.DataFrame(records).sort_values("date").reset_index(drop=True)
         df["date"] = pd.to_datetime(df["date"])
         return df
+
+
+def align_over_1000_ratio_to_bars(
+    bar_index: pd.DatetimeIndex,
+    weekly: pd.DataFrame,
+) -> pd.Series:
+    """將週更新集保比例對齊至每根 K 線（前向填充，每日同步顯示）。"""
+    if weekly is None or weekly.empty:
+        return pd.Series(index=bar_index, dtype=float)
+
+    bars = pd.DataFrame({"bar_date": pd.to_datetime(bar_index).normalize()})
+    w = (
+        weekly.sort_values("date")[["date", "ratio"]]
+        .rename(columns={"date": "bar_date", "ratio": "over_1000_ratio"})
+        .copy()
+    )
+    w["bar_date"] = pd.to_datetime(w["bar_date"]).dt.normalize()
+    merged = pd.merge_asof(bars, w, on="bar_date", direction="backward")
+    return merged["over_1000_ratio"].set_axis(bar_index)
