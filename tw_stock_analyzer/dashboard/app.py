@@ -612,7 +612,6 @@ def main() -> None:
         render_interactive_chart(
             display_df,
             f"{report.name}（{report.symbol}）股價與均線",
-            symbol=report.symbol,
             fib=fib_display,
             spec=chart_spec,
             fib_unit=chart_spec.fib_unit,
