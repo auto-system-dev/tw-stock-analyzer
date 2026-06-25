@@ -18,7 +18,7 @@ class RankedStock:
     direction: str
     fast_score: int = 0
     resonance_passed: int = 0
-    resonance_total: int = 6
+    resonance_total: int = 7
 
     @property
     def resonance_label(self) -> str:

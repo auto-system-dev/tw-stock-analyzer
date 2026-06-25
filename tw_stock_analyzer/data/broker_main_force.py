@@ -132,6 +132,20 @@ class FubonMainForceProvider:
         return df
 
 
+def fetch_aligned_main_force(
+    symbol: str,
+    bar_index: pd.DatetimeIndex,
+) -> pd.DataFrame | None:
+    """抓取主力歷史並對齊 K 線索引（無 Streamlit 快取）。"""
+    daily = FubonMainForceProvider().fetch_daily_history(symbol)
+    if daily is None or daily.empty:
+        return None
+    aligned = align_main_force_to_bars(bar_index, daily)
+    if aligned["main_force_net"].notna().any():
+        return aligned
+    return None
+
+
 def align_main_force_to_bars(
     bar_index: pd.DatetimeIndex,
     daily: pd.DataFrame,

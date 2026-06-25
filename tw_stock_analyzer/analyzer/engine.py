@@ -81,7 +81,12 @@ class StockAnalyzer:
             prediction,
             use_ml=True,
         )
-        bullish_resonance = compute_bullish_resonance(enriched, fib)
+        bullish_resonance = compute_bullish_resonance(
+            enriched,
+            fib,
+            symbol=info["symbol"],
+            fetch_main_force=True,
+        )
 
         summary = self._build_summary(info["name"], prediction, market_context, potential_score)
         return AnalysisReport(

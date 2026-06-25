@@ -15,7 +15,11 @@ from tw_stock_analyzer.indicators.fibonacci import (
     compute_fibonacci_retracement,
 )
 from tw_stock_analyzer.indicators.technical import TechnicalIndicators
-from tw_stock_analyzer.predictor.resonance import BullishResonance, compute_bullish_resonance
+from tw_stock_analyzer.predictor.resonance import (
+    BullishResonance,
+    RESONANCE_ITEM_COUNT,
+    compute_bullish_resonance,
+)
 from tw_stock_analyzer.screener.universe import get_universe
 
 # 全市場掃描每批檔數（避免長時間無回饋、降低單次記憶體峰值）
@@ -77,7 +81,12 @@ def _scan_stock_ids(
                 continue
             enriched = indicators.compute(raw)
             fib = compute_fibonacci_retracement(enriched, lookback=FIB_SIGNAL_LOOKBACK)
-            resonance = compute_bullish_resonance(enriched, fib)
+            resonance = compute_bullish_resonance(
+                enriched,
+                fib,
+                symbol=stock_id,
+                fetch_main_force=False,
+            )
             if resonance.passed_count < min_passed:
                 continue
             latest = enriched.iloc[-1]
@@ -195,7 +204,7 @@ def format_resonance_telegram_message(
         return (
             f"📊 <b>多頭共振掃描</b>（{now}）\n"
             f"股票池：{_escape_html(universe_label)}{scan_note}\n"
-            f"門檻：≥ {min_passed}/6\n"
+            f"門檻：≥ {min_passed}/{RESONANCE_ITEM_COUNT}\n"
             f"\n今日無符合條件的標的。"
         )
 
@@ -205,7 +214,7 @@ def format_resonance_telegram_message(
     lines = [
         f"📊 <b>多頭共振掃描</b>（{now}）",
         f"股票池：{_escape_html(universe_label)}{scan_note}",
-        f"門檻：≥ {min_passed}/6",
+        f"門檻：≥ {min_passed}/{RESONANCE_ITEM_COUNT}",
         f"符合 <b>{len(hits)}</b> 檔"
         + (f"（以下顯示前 {len(display_hits)} 檔）" if truncated else "")
         + "：",

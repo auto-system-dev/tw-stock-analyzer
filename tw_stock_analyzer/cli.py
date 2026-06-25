@@ -328,8 +328,8 @@ def screen_cmd(
     "--min-resonance",
     default=5,
     show_default=True,
-    type=click.IntRange(1, 6),
-    help="至少符合幾項多頭共振（1～6）",
+    type=click.IntRange(1, 7),
+    help="至少符合幾項多頭共振（1～7）",
 )
 @click.option(
     "--period",
@@ -434,7 +434,7 @@ def notify_resonance_cmd(
         console.print(f"[red]Telegram 發送失敗：{e}[/red]")
         raise SystemExit(1) from e
 
-    console.print(f"[green]已發送 Telegram（{len(hits)} 檔符合 ≥ {min_resonance}/6）。[/green]")
+    console.print(f"[green]已發送 Telegram（{len(hits)} 檔符合 ≥ {min_resonance}/7）。[/green]")
 
 
 @main.command("backtest")

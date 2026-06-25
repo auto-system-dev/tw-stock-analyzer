@@ -31,7 +31,7 @@ class ScreenerFilters:
         revenue_yoy: float | None,
         *,
         resonance_passed: int = 0,
-        resonance_total: int = 6,
+        resonance_total: int = 7,
     ) -> bool:
         if total < self.min_score:
             return False

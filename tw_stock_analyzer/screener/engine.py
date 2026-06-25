@@ -182,7 +182,7 @@ class ScreenerEngine:
                 direction = aggregate_direction(0.0, signals, use_ml=False)
                 revenue_yoy = ctx.fundamentals.revenue_yoy_pct
                 fib = compute_fibonacci_retracement(enriched, lookback=FIB_SIGNAL_LOOKBACK)
-                resonance = compute_bullish_resonance(enriched, fib)
+                resonance = compute_bullish_resonance(enriched, fib, fetch_main_force=False)
                 if not flt.passes(
                     score.total,
                     direction,

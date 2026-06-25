@@ -1,4 +1,4 @@
-"""多頭共振六項條件檢查。"""
+"""多頭共振條件檢查。"""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from tw_stock_analyzer.data.broker_main_force import fetch_aligned_main_force
 from tw_stock_analyzer.indicators.fibonacci import (
     FIB_SIGNAL_LOOKBACK,
     FibonacciRetracement,
@@ -22,6 +23,8 @@ BB_BREAKOUT_LOOKBACK = 20
 BB_UPPER_TOLERANCE_PCT = 0.005
 MACD_CROSS_LOOKBACK = 5
 MACD_HIST_EXPAND_DAYS = 2
+MAIN_FORCE_NET_LOOKBACK = 5
+RESONANCE_ITEM_COUNT = 7
 
 
 @dataclass(frozen=True)
@@ -196,10 +199,74 @@ def _macd_above_zero_bullish(latest: pd.Series) -> tuple[bool, str]:
     return False, " · ".join(parts)
 
 
+def _main_force_green_to_red_expand_with_breakout(
+    df: pd.DataFrame,
+    main_force_net: pd.Series,
+    *,
+    net_lookback: int = MAIN_FORCE_NET_LOOKBACK,
+) -> tuple[bool, str]:
+    """
+    主力淨張：近期曾淨賣（綠柱）→ 今日淨買（紅柱）且放大，並伴隨收盤價高於前一日。
+    """
+    aligned = main_force_net.reindex(df.index)
+    recent: list[float] = []
+    for value in aligned.iloc[::-1]:
+        if pd.notna(value):
+            recent.append(float(value))
+        if len(recent) >= net_lookback + 1:
+            break
+    recent.reverse()
+
+    if len(recent) < 2:
+        return False, "主力淨張資料不足（需至少 2 日）"
+
+    prev_net = recent[-2]
+    latest_net = recent[-1]
+    had_green = any(value < 0 for value in recent[:-1])
+
+    flip_ok = prev_net < 0 and latest_net > 0
+    if prev_net < 0:
+        expand_ok = latest_net > abs(prev_net)
+        expand_detail = (
+            f"淨 {prev_net:+,.0f} → {latest_net:+,.0f} 張（紅柱放大）"
+            if expand_ok
+            else f"淨 {prev_net:+,.0f} → {latest_net:+,.0f} 張（紅柱未放大）"
+        )
+    else:
+        expand_ok = latest_net > prev_net > 0
+        expand_detail = (
+            f"淨 {prev_net:+,.0f} → {latest_net:+,.0f} 張（續強）"
+            if expand_ok
+            else f"淨 {prev_net:+,.0f} → {latest_net:+,.0f} 張（未續強）"
+        )
+
+    close = float(df.iloc[-1]["close"])
+    prev_close = float(df.iloc[-2]["close"])
+    price_ok = close > prev_close
+    price_detail = (
+        f"收 {close:,.0f} > 前日收 {prev_close:,.0f}"
+        if price_ok
+        else f"收 {close:,.0f} ≤ 前日收 {prev_close:,.0f}"
+    )
+
+    ok = flip_ok and expand_ok and had_green and price_ok
+    if not had_green:
+        flip_detail = f"近 {len(recent) - 1} 日無淨賣（綠柱）"
+    elif not flip_ok:
+        flip_detail = f"未由綠轉紅（{prev_net:+,.0f} → {latest_net:+,.0f} 張）"
+    else:
+        flip_detail = f"綠轉紅（{prev_net:+,.0f} → {latest_net:+,.0f} 張）"
+
+    detail = f"{flip_detail} · {expand_detail} · {price_detail}"
+    return ok, detail
+
+
 def compute_bullish_resonance(
     df: pd.DataFrame,
     fib: FibonacciRetracement | None = None,
     *,
+    symbol: str | None = None,
+    fetch_main_force: bool = True,
     volume_ratio_min: float = 1.2,
     bb_middle_rise_days: int = BB_MIDDLE_RISE_DAYS,
     bb_breakout_lookback: int = BB_BREAKOUT_LOOKBACK,
@@ -207,10 +274,10 @@ def compute_bullish_resonance(
     macd_cross_lookback: int = MACD_CROSS_LOOKBACK,
     macd_hist_expand_days: int = MACD_HIST_EXPAND_DAYS,
 ) -> BullishResonance:
-    """檢查六項多頭共振條件（以最新交易日為準）。"""
+    """檢查多頭共振條件（以最新交易日為準）。"""
     if len(df) < 2:
         empty = (ResonanceItem("資料不足", False, "至少需要 2 日資料"),)
-        return BullishResonance(items=empty, passed_count=0, total=6)
+        return BullishResonance(items=empty, passed_count=0, total=RESONANCE_ITEM_COUNT)
 
     latest = df.iloc[-1]
     prev = df.iloc[-2]
@@ -310,6 +377,23 @@ def compute_bullish_resonance(
     macd_ok = cross_ok and zero_ok and expand_ok
     macd_detail = f"{cross_detail} · {zero_detail} · {expand_detail}"
 
+    if not fetch_main_force:
+        mf_ok = False
+        mf_detail = "掃描略過（單檔分析才載入富邦主力淨張）"
+    elif symbol:
+        aligned = fetch_aligned_main_force(symbol, df.index)
+        if aligned is None:
+            mf_ok = False
+            mf_detail = "無主力淨張資料（富邦分點）"
+        else:
+            mf_ok, mf_detail = _main_force_green_to_red_expand_with_breakout(
+                df,
+                aligned["main_force_net"],
+            )
+    else:
+        mf_ok = False
+        mf_detail = "未提供股票代號，無法檢查主力淨張"
+
     items = (
         ResonanceItem("成交量放量確認", vol_ok, vol_detail),
         ResonanceItem("均線多頭排列，方向向上", ma_ok, ma_detail),
@@ -317,6 +401,11 @@ def compute_bullish_resonance(
         ResonanceItem("Fib 支撐（38.2% / 61.8% 以上確認）", fib_ok, fib_detail),
         ResonanceItem("RSI 守住 50 生命線", rsi_ok, rsi_detail),
         ResonanceItem("MACD 金叉、0 軸多頭、能量柱放大", macd_ok, macd_detail),
+        ResonanceItem(
+            "主力淨張綠轉紅放大＋價突破",
+            mf_ok,
+            mf_detail,
+        ),
     )
     passed = sum(1 for item in items if item.passed)
     return BullishResonance(items=items, passed_count=passed, total=len(items))

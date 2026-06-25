@@ -151,8 +151,8 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, str, s
             screen_opts["min_score"] = st.slider("最低綜合分", 0, 80, 0, step=5)
             screen_opts["bullish_only"] = st.checkbox("僅看多")
             st.markdown("**多頭共振篩選**")
-            screen_opts["resonance_full_only"] = st.checkbox("僅顯示多頭共振（6/6）")
-            screen_opts["resonance_min_4"] = st.checkbox("至少符合 4/6 項")
+            screen_opts["resonance_full_only"] = st.checkbox("僅顯示多頭共振（7/7）")
+            screen_opts["resonance_min_4"] = st.checkbox("至少符合 4/7 項")
             screen_opts["period"] = st.selectbox(
                 "掃描資料期間",
                 list(PERIOD_OPTIONS.keys()),
@@ -322,7 +322,10 @@ def render_signals(report: AnalysisReport) -> None:
 
     st.subheader("多頭共振檢查")
     if resonance.all_passed:
-        st.success(f"🟢 多頭共振成立（{resonance.passed_count}/{resonance.total}）— 六項技術條件同時符合")
+        st.success(
+            f"🟢 多頭共振成立（{resonance.passed_count}/{resonance.total}）"
+            f"— {resonance.total} 項技術條件同時符合"
+        )
     else:
         st.info(f"符合 {resonance.passed_count}/{resonance.total} 項 · 尚未完全共振")
 
@@ -413,9 +416,9 @@ def render_screener_page(screen_opts: dict) -> None:
     if not result.ranked:
         filter_hint = ""
         if screen_opts.get("resonance_full_only"):
-            filter_hint = "（已啟用 6/6 共振篩選）"
+            filter_hint = "（已啟用 7/7 共振篩選）"
         elif screen_opts.get("resonance_min_4"):
-            filter_hint = "（已啟用至少 4/6 共振篩選）"
+            filter_hint = "（已啟用至少 4/7 共振篩選）"
         st.warning(f"無符合條件的標的，請調低最低分或更換股票池。{filter_hint}")
         return
 
