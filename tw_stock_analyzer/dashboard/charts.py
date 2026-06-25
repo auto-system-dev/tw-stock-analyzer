@@ -23,6 +23,7 @@ from tw_stock_analyzer.indicators.chart_timeframe import (
 
 ORDINAL_VOL_BAR_WIDTH = 0.72
 ORDINAL_MACD_BAR_WIDTH = 0.85
+ORDINAL_MAIN_FORCE_BAR_WIDTH = 0.72
 
 
 def _xaxis_names(n_rows: int) -> tuple[str, ...]:
@@ -272,6 +273,59 @@ def _add_price_traces(
         )
 
 
+def _main_force_bar_colors(values: pd.Series) -> list[str]:
+    """淨張數：正紅、負綠、持平灰。"""
+    colors: list[str] = []
+    for value in values:
+        if pd.isna(value):
+            colors.append("#94a3b8")
+        elif value > 0:
+            colors.append("#ef4444")
+        elif value < 0:
+            colors.append("#22c55e")
+        else:
+            colors.append("#94a3b8")
+    return colors
+
+
+def _add_main_force_net_panel(
+    fig: go.Figure,
+    x_coords: list,
+    net_lots: pd.Series,
+    *,
+    row: int,
+    xaxis_is_ordinal: bool,
+) -> None:
+    values = net_lots.astype(float)
+    colors = _main_force_bar_colors(values)
+    bar_width = ORDINAL_MAIN_FORCE_BAR_WIDTH if xaxis_is_ordinal else None
+    fig.add_trace(
+        go.Bar(
+            x=x_coords,
+            y=values,
+            name="主力淨張數",
+            width=bar_width,
+            marker=dict(color=colors, line=dict(width=0)),
+            hoverinfo="skip",
+            showlegend=False,
+        ),
+        row=row,
+        col=1,
+    )
+    valid = values.dropna()
+    if valid.empty:
+        return
+    y_max = float(valid.abs().max())
+    pad = max(y_max * 0.15, 50.0)
+    fig.update_yaxes(
+        title_text="淨張",
+        row=row,
+        col=1,
+        side="right",
+        range=[-y_max - pad, y_max + pad],
+    )
+
+
 def build_combined_chart(
     df: pd.DataFrame,
     title: str,
@@ -280,14 +334,38 @@ def build_combined_chart(
     spec: ChartTimeframeSpec | None = None,
     fib_unit: str = "日",
     fib_margin: bool = False,
+    main_force: pd.DataFrame | None = None,
 ) -> go.Figure:
-    """K 線 + 成交量 + RSI + MACD 合併圖（含十字游標）。"""
+    """K 線 + 成交量 + RSI + MACD (+ 主力淨張數) 合併圖（含十字游標）。"""
     chart_spec = spec or TIMEFRAME_SPECS["日線"]
     xaxis = _build_chart_xaxis(df, chart_spec)
     x_coords = xaxis.coords
-    n_rows = 4
-    row_heights = [0.48, 0.14, 0.19, 0.19]
-    subplot_titles = (None, None, "RSI (14)", "MACD")
+    has_main_force = (
+        main_force is not None
+        and "main_force_net" in main_force.columns
+        and main_force["main_force_net"].notna().any()
+    )
+    n_rows = 5 if has_main_force else 4
+    latest_net = (
+        float(main_force["main_force_net"].dropna().iloc[-1])
+        if has_main_force
+        else None
+    )
+    main_force_title = (
+        f"主力淨張數 ({latest_net:+,.0f} 張)"
+        if latest_net is not None
+        else "主力淨張數"
+    )
+    row_heights = (
+        [0.40, 0.11, 0.14, 0.14, 0.14]
+        if has_main_force
+        else [0.48, 0.14, 0.19, 0.19]
+    )
+    subplot_titles = (
+        (None, None, "RSI (14)", "MACD", main_force_title)
+        if has_main_force
+        else (None, None, "RSI (14)", "MACD")
+    )
     fig = make_subplots(
         rows=n_rows,
         cols=1,
@@ -383,7 +461,7 @@ def build_combined_chart(
     layout_kwargs: dict = dict(
         title=dict(text=title, x=0.01, xanchor="left", font=dict(size=14)),
         xaxis_rangeslider_visible=False,
-        height=880,
+        height=1000 if has_main_force else 880,
         margin=dict(l=40, r=88 if show_fib_margin else 20, t=90, b=28),
         legend=dict(
             orientation="h",
@@ -405,6 +483,14 @@ def build_combined_chart(
     fig.update_yaxes(title_text="量（張）", row=2, col=1)
     fig.update_yaxes(title_text="RSI", row=3, col=1, range=[0, 100])
     fig.update_yaxes(title_text="MACD", row=4, col=1)
+    if has_main_force:
+        _add_main_force_net_panel(
+            fig,
+            x_coords,
+            main_force["main_force_net"],
+            row=5,
+            xaxis_is_ordinal=xaxis.is_ordinal,
+        )
     fig.update_xaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)")
     fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)")
     for r in range(1, n_rows + 1):
@@ -415,6 +501,9 @@ def build_combined_chart(
     _add_hover_capture(fig, plot_df, x_coords, 2, "_volume_lots")
     _add_hover_capture(fig, df, x_coords, 3, "rsi_14")
     _add_hover_capture(fig, df, x_coords, 4, "macd")
+    if has_main_force:
+        plot_main = df.assign(_main_force_net=main_force["main_force_net"])
+        _add_hover_capture(fig, plot_main, x_coords, 5, "_main_force_net")
     _apply_ordinal_axis(fig, xaxis, n_rows=n_rows)
     _apply_crosshair(fig, n_rows=n_rows)
     return fig

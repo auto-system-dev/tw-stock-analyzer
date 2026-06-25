@@ -612,11 +612,17 @@ def main() -> None:
         render_interactive_chart(
             display_df,
             f"{report.name}（{report.symbol}）股價與均線",
+            symbol=report.symbol,
             fib=fib_display,
             spec=chart_spec,
             fib_unit=chart_spec.fib_unit,
             fib_chart_mode=fib_mode if show_fibonacci else None,
         )
+        if chart_timeframe == "日線":
+            st.caption(
+                "主力淨張數：富邦 e-Broker 主力分點彙總（買進／賣出／淨張，單位張），"
+                "約近 20 個交易日，僅日線圖表顯示。"
+            )
 
     with tab_signal:
         render_signals(report)
