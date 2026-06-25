@@ -14,6 +14,9 @@ from tw_stock_analyzer.data.symbol_utils import to_stock_id
 
 FUBON_BASE = "https://fubon-ebrokerdj.fbs.com.tw"
 _REQUEST_GAP_SEC = 0.12
+_HISTORY_CACHE_TTL_SEC = 3600
+# 超過此檔數時，批次掃描預設不抓富邦主力（每檔約 3～5 秒）
+MAIN_FORCE_SCAN_MAX_STOCKS = 60
 _HISTORY_ROW_RE = re.compile(
     r'<TD class="t4n0">(\d{4}/\d{2}/\d{2})</TD>\s*'
     r'<TD class="t3n1">([\d,]+)</TD>\s*'
@@ -132,12 +135,48 @@ class FubonMainForceProvider:
         return df
 
 
+_history_cache: dict[str, tuple[float, pd.DataFrame]] = {}
+_provider: FubonMainForceProvider | None = None
+
+
+def get_main_force_provider() -> FubonMainForceProvider:
+    """共用 HTTP session（批次掃描時減少連線開銷）。"""
+    global _provider
+    if _provider is None:
+        _provider = FubonMainForceProvider()
+    return _provider
+
+
+def fetch_main_force_daily_history(symbol: str) -> pd.DataFrame | None:
+    """抓取主力日線（程序內快取 1 小時，供掃描重複使用）。"""
+    stock_id = to_stock_id(symbol)
+    now = time.time()
+    cached = _history_cache.get(stock_id)
+    if cached is not None and now - cached[0] < _HISTORY_CACHE_TTL_SEC:
+        return cached[1]
+
+    df = get_main_force_provider().fetch_daily_history(symbol)
+    if df is not None and not df.empty:
+        _history_cache[stock_id] = (now, df)
+    return df
+
+
+def resolve_fetch_main_force(
+    fetch_main_force: bool | None,
+    stock_count: int,
+) -> bool:
+    """None 時：檔數 ≤ MAIN_FORCE_SCAN_MAX_STOCKS 才啟用第 7 項。"""
+    if fetch_main_force is not None:
+        return fetch_main_force
+    return stock_count <= MAIN_FORCE_SCAN_MAX_STOCKS
+
+
 def fetch_aligned_main_force(
     symbol: str,
     bar_index: pd.DatetimeIndex,
 ) -> pd.DataFrame | None:
     """抓取主力歷史並對齊 K 線索引（無 Streamlit 快取）。"""
-    daily = FubonMainForceProvider().fetch_daily_history(symbol)
+    daily = fetch_main_force_daily_history(symbol)
     if daily is None or daily.empty:
         return None
     aligned = align_main_force_to_bars(bar_index, daily)

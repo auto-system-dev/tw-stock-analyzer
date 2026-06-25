@@ -8,6 +8,7 @@ from datetime import datetime
 
 import pandas as pd
 
+from tw_stock_analyzer.data.broker_main_force import resolve_fetch_main_force
 from tw_stock_analyzer.data.fetcher import StockFetcher
 from tw_stock_analyzer.data.stock_names import resolve_tw_stock_name
 from tw_stock_analyzer.indicators.fibonacci import (
@@ -49,6 +50,7 @@ class ResonanceScanSummary:
     scanned_count: int
     total_count: int
     batch_count: int
+    fetch_main_force: bool = False
 
 
 def _chunked(items: list[str], size: int) -> list[list[str]]:
@@ -72,6 +74,7 @@ def _scan_stock_ids(
     indicators: TechnicalIndicators,
     min_passed: int,
     period: str,
+    fetch_main_force: bool,
 ) -> list[ResonanceHit]:
     hits: list[ResonanceHit] = []
     for stock_id in stock_ids:
@@ -85,7 +88,7 @@ def _scan_stock_ids(
                 enriched,
                 fib,
                 symbol=stock_id,
-                fetch_main_force=False,
+                fetch_main_force=fetch_main_force,
             )
             if resonance.passed_count < min_passed:
                 continue
@@ -112,6 +115,7 @@ def scan_resonance_hits(
     min_passed: int = 5,
     period: str = "1y",
     batch_size: int = RESONANCE_BATCH_SIZE,
+    fetch_main_force: bool | None = None,
     on_progress: Callable[[int, int, int], None] | None = None,
 ) -> list[ResonanceHit]:
     """掃描股票池，回傳多頭共振達門檻的標的。
@@ -125,6 +129,7 @@ def scan_resonance_hits(
         min_passed=min_passed,
         period=period,
         batch_size=batch_size,
+        fetch_main_force=fetch_main_force,
         on_progress=on_progress,
     )
     return list(summary.hits)
@@ -137,11 +142,13 @@ def scan_resonance_with_summary(
     min_passed: int = 5,
     period: str = "1y",
     batch_size: int = RESONANCE_BATCH_SIZE,
+    fetch_main_force: bool | None = None,
     on_progress: Callable[[int, int, int], None] | None = None,
 ) -> ResonanceScanSummary:
     """掃描並回傳合併結果與掃描摘要。"""
     stock_ids, _ = get_universe(universe, symbols)
     total = len(stock_ids)
+    use_main_force = resolve_fetch_main_force(fetch_main_force, total)
     fetcher = StockFetcher()
     indicators = TechnicalIndicators()
     all_hits: list[ResonanceHit] = []
@@ -162,6 +169,7 @@ def scan_resonance_with_summary(
                 indicators=indicators,
                 min_passed=min_passed,
                 period=period,
+                fetch_main_force=use_main_force,
             )
         )
         scanned += len(batch)
@@ -175,6 +183,7 @@ def scan_resonance_with_summary(
         scanned_count=scanned,
         total_count=total,
         batch_count=len(batches),
+        fetch_main_force=use_main_force,
     )
 
 
@@ -193,17 +202,23 @@ def format_resonance_telegram_message(
     universe_label: str,
     scanned_count: int | None = None,
     total_count: int | None = None,
+    fetch_main_force: bool = True,
 ) -> str:
     """將掃描結果格式化為 Telegram HTML 訊息。"""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     scan_note = ""
     if scanned_count is not None and total_count is not None and total_count > 0:
         scan_note = f"\n已掃描 {scanned_count}/{total_count} 檔"
+    main_force_note = (
+        ""
+        if fetch_main_force
+        else f"\n第 7 項主力淨張：本次掃描略過"
+    )
 
     if not hits:
         return (
             f"📊 <b>多頭共振掃描</b>（{now}）\n"
-            f"股票池：{_escape_html(universe_label)}{scan_note}\n"
+            f"股票池：{_escape_html(universe_label)}{scan_note}{main_force_note}\n"
             f"門檻：≥ {min_passed}/{RESONANCE_ITEM_COUNT}\n"
             f"\n今日無符合條件的標的。"
         )
@@ -213,7 +228,7 @@ def format_resonance_telegram_message(
 
     lines = [
         f"📊 <b>多頭共振掃描</b>（{now}）",
-        f"股票池：{_escape_html(universe_label)}{scan_note}",
+        f"股票池：{_escape_html(universe_label)}{scan_note}{main_force_note}",
         f"門檻：≥ {min_passed}/{RESONANCE_ITEM_COUNT}",
         f"符合 <b>{len(hits)}</b> 檔"
         + (f"（以下顯示前 {len(display_hits)} 檔）" if truncated else "")

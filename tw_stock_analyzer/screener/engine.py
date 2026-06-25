@@ -45,6 +45,7 @@ class ScreenerEngine:
         institutional_days: int = 5,
         lightweight_deep: bool = False,
         batch_size: int = SCREENER_BATCH_SIZE,
+        fetch_main_force: bool = True,
     ):
         self.fetcher = StockFetcher()
         self.indicators = TechnicalIndicators()
@@ -52,6 +53,7 @@ class ScreenerEngine:
         self.period = period
         self.lightweight_deep = lightweight_deep
         self.batch_size = batch_size
+        self.fetch_main_force = fetch_main_force
 
     def _fast_score(self, latest: pd.Series, signals: dict[str, str]) -> int:
         """快速分：技術規則 + 動能（不含 ML 與 API）。"""
@@ -119,6 +121,11 @@ class ScreenerEngine:
         if symbols:
             notes.append(f"已使用自訂代號（{len(stock_ids)} 檔），股票池設定已覆蓋")
 
+        if self.fetch_main_force:
+            notes.append(
+                "深度掃描含主力淨張（第 7 項共振，每檔約多 3～5 秒）"
+            )
+
         use_batches = (
             universe == "all"
             and not symbols
@@ -182,7 +189,12 @@ class ScreenerEngine:
                 direction = aggregate_direction(0.0, signals, use_ml=False)
                 revenue_yoy = ctx.fundamentals.revenue_yoy_pct
                 fib = compute_fibonacci_retracement(enriched, lookback=FIB_SIGNAL_LOOKBACK)
-                resonance = compute_bullish_resonance(enriched, fib, fetch_main_force=False)
+                resonance = compute_bullish_resonance(
+                    enriched,
+                    fib,
+                    symbol=stock_id,
+                    fetch_main_force=self.fetch_main_force,
+                )
                 if not flt.passes(
                     score.total,
                     direction,

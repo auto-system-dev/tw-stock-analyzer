@@ -11,6 +11,7 @@ from rich.table import Table
 
 from tw_stock_analyzer.analyzer.engine import StockAnalyzer
 from tw_stock_analyzer.backtest.engine import BacktestEngine
+from tw_stock_analyzer.data.broker_main_force import resolve_fetch_main_force
 from tw_stock_analyzer.notifications.resonance_alert import (
     format_resonance_telegram_message,
     scan_resonance_with_summary,
@@ -357,6 +358,11 @@ def screen_cmd(
     default=False,
     help="無符合標的時也發送 Telegram（預設僅在有符合時發送）",
 )
+@click.option(
+    "--with-main-force/--no-main-force",
+    default=None,
+    help="是否檢查第 7 項主力淨張（預設：≤60 檔自動啟用，全市場略過）",
+)
 def notify_resonance_cmd(
     universe: str,
     symbols: str,
@@ -365,11 +371,21 @@ def notify_resonance_cmd(
     batch_size: int,
     dry_run: bool,
     notify_empty: bool,
+    with_main_force: bool | None,
 ) -> None:
     """掃描多頭共振並發送 Telegram，例如：tw-stock notify-resonance --min-resonance 5"""
     sym_list = [s.strip() for s in symbols.split(",") if s.strip()] or None
-    _, universe_label = get_universe(universe.lower(), sym_list)
     u = universe.lower()
+    stock_ids, universe_label = get_universe(u, sym_list)
+
+    use_main_force = resolve_fetch_main_force(with_main_force, len(stock_ids))
+    if with_main_force is None and not use_main_force:
+        console.print(
+            f"[yellow]股票池 {len(stock_ids)} 檔，第 7 項主力淨張預設略過"
+            f"（可加 --with-main-force 強制啟用，每檔約多 3～5 秒）[/yellow]"
+        )
+    elif use_main_force:
+        console.print("[cyan]已啟用第 7 項主力淨張檢查（富邦分點）[/cyan]")
 
     def on_progress(scanned: int, total: int, batch_index: int) -> None:
         console.print(
@@ -387,6 +403,7 @@ def notify_resonance_cmd(
                 min_passed=min_resonance,
                 period=period,
                 batch_size=batch_size,
+                fetch_main_force=with_main_force,
                 on_progress=on_progress,
             )
         else:
@@ -397,6 +414,7 @@ def notify_resonance_cmd(
                     min_passed=min_resonance,
                     period=period,
                     batch_size=batch_size,
+                    fetch_main_force=with_main_force,
                 )
         hits = list(summary.hits)
     except Exception as e:
@@ -414,6 +432,7 @@ def notify_resonance_cmd(
         universe_label=universe_label,
         scanned_count=summary.scanned_count,
         total_count=summary.total_count,
+        fetch_main_force=summary.fetch_main_force,
     )
     console.print(message)
 

@@ -153,6 +153,11 @@ def render_sidebar() -> tuple[str, str, str, int, bool, bool, dict, bool, str, s
             st.markdown("**多頭共振篩選**")
             screen_opts["resonance_full_only"] = st.checkbox("僅顯示多頭共振（7/7）")
             screen_opts["resonance_min_4"] = st.checkbox("至少符合 4/7 項")
+            screen_opts["fetch_main_force"] = st.checkbox(
+                "共振含主力淨張（第 7 項）",
+                value=True,
+                help="深度掃描階段向富邦抓取主力資料，每檔約多 3～5 秒",
+            )
             screen_opts["period"] = st.selectbox(
                 "掃描資料期間",
                 list(PERIOD_OPTIONS.keys()),
@@ -361,6 +366,7 @@ def render_screener_page(screen_opts: dict) -> None:
         bullish_only = screen_opts["bullish_only"]
         resonance_full_only = screen_opts.get("resonance_full_only", False)
         resonance_min_4 = screen_opts.get("resonance_min_4", False)
+        fetch_main_force = screen_opts.get("fetch_main_force", True)
         period = PERIOD_OPTIONS[screen_opts["period"]]
 
         progress_bar = st.progress(0, text="準備掃描…")
@@ -387,6 +393,7 @@ def render_screener_page(screen_opts: dict) -> None:
                 period,
                 resonance_full_only=resonance_full_only,
                 resonance_min_4=resonance_min_4,
+                fetch_main_force=fetch_main_force,
                 progress=_on_progress,
             )
             progress_bar.progress(1.0, text="掃描完成")

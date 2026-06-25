@@ -379,7 +379,7 @@ def compute_bullish_resonance(
 
     if not fetch_main_force:
         mf_ok = False
-        mf_detail = "掃描略過（單檔分析才載入富邦主力淨張）"
+        mf_detail = "未啟用主力淨張檢查"
     elif symbol:
         aligned = fetch_aligned_main_force(symbol, df.index)
         if aligned is None:

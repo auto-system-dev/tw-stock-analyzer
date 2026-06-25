@@ -36,6 +36,7 @@ def run_screen_live(
     *,
     resonance_full_only: bool = False,
     resonance_min_4: bool = False,
+    fetch_main_force: bool = True,
     progress: Callable[[str, int, int], None] | None = None,
 ) -> ScreenerResult:
     """執行掃描（不快取），支援進度回呼以保持 Streamlit 連線。"""
@@ -47,7 +48,11 @@ def run_screen_live(
         resonance_full_only=resonance_full_only,
         resonance_min_4=resonance_min_4,
     )
-    return ScreenerEngine(period=period, lightweight_deep=True).scan(
+    return ScreenerEngine(
+        period=period,
+        lightweight_deep=True,
+        fetch_main_force=fetch_main_force,
+    ).scan(
         universe=universe,
         symbols=sym_list,
         filters=flt,
