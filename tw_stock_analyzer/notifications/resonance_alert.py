@@ -21,10 +21,14 @@ from tw_stock_analyzer.predictor.resonance import (
     RESONANCE_ITEM_COUNT,
     compute_bullish_resonance,
 )
+from tw_stock_analyzer.screener.engine import ScreenerEngine
+from tw_stock_analyzer.screener.filters import ScreenerFilters
 from tw_stock_analyzer.screener.universe import get_universe
 
 # 全市場掃描每批檔數（避免長時間無回饋、降低單次記憶體峰值）
 RESONANCE_BATCH_SIZE = 50
+# 潛力股 Top N → 多頭共振（含第 7 項）預設候選檔數
+DEFAULT_TOP_RESONANCE_CANDIDATES = 60
 # Telegram 單則訊息最多列出幾檔符合標的（避免超過 4096 字元限制）
 TELEGRAM_MAX_HITS = 20
 
@@ -75,9 +79,13 @@ def _scan_stock_ids(
     min_passed: int,
     period: str,
     fetch_main_force: bool,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> list[ResonanceHit]:
     hits: list[ResonanceHit] = []
-    for stock_id in stock_ids:
+    total = len(stock_ids)
+    for idx, stock_id in enumerate(stock_ids, start=1):
+        if on_progress is not None:
+            on_progress(idx, total)
         try:
             raw = fetcher.fetch(stock_id, period=period)
             if len(raw) < 2:
@@ -187,6 +195,77 @@ def scan_resonance_with_summary(
     )
 
 
+def scan_top_resonance_with_summary(
+    *,
+    universe: str = "all",
+    symbols: list[str] | None = None,
+    top_n: int = DEFAULT_TOP_RESONANCE_CANDIDATES,
+    min_passed: int = 6,
+    period: str = "1y",
+    min_score: int = 0,
+    bullish_only: bool = False,
+    on_screener_progress: Callable[[str, int, int], None] | None = None,
+    on_resonance_progress: Callable[[int, int], None] | None = None,
+) -> tuple[ResonanceScanSummary, str]:
+    """全市場潛力股 Top N → 多頭共振（強制含第 7 項主力淨張）。
+
+    回傳 (掃描摘要, 股票池標籤)。
+    """
+    if symbols:
+        candidate_ids = list(symbols)
+        _, base_label = get_universe(universe, symbols)
+        universe_total = len(candidate_ids)
+        batch_count = 1
+    else:
+        flt = ScreenerFilters(
+            min_score=min_score,
+            top_n=top_n,
+            deep_candidates=top_n,
+            bullish_only=bullish_only,
+        )
+        screener = ScreenerEngine(period=period, fetch_main_force=False)
+        screen_result = screener.scan(
+            universe=universe,
+            filters=flt,
+            progress=on_screener_progress,
+        )
+        candidate_ids = [row.symbol for row in screen_result.ranked]
+        universe_total = screen_result.universe_total or screen_result.scanned_count
+        batch_count = screen_result.batch_count
+        base_label = screen_result.universe_label
+
+    pool_label = (
+        f"{base_label} → 潛力股 Top {len(candidate_ids)}"
+        if not symbols
+        else f"自訂 {len(candidate_ids)} 檔"
+    )
+
+    fetcher = StockFetcher()
+    indicators = TechnicalIndicators()
+    resonance_total = len(candidate_ids)
+
+    hits = _scan_stock_ids(
+        candidate_ids,
+        fetcher=fetcher,
+        indicators=indicators,
+        min_passed=min_passed,
+        period=period,
+        fetch_main_force=True,
+        on_progress=on_resonance_progress,
+    )
+
+    merged = _merge_hits(hits)
+    merged.sort(key=lambda h: (h.resonance.passed_count, h.symbol), reverse=True)
+    summary = ResonanceScanSummary(
+        hits=tuple(merged),
+        scanned_count=resonance_total,
+        total_count=universe_total,
+        batch_count=batch_count,
+        fetch_main_force=True,
+    )
+    return summary, pool_label
+
+
 def _escape_html(text: str) -> str:
     return (
         text.replace("&", "&amp;")
@@ -203,6 +282,7 @@ def format_resonance_telegram_message(
     scanned_count: int | None = None,
     total_count: int | None = None,
     fetch_main_force: bool = True,
+    title: str = "多頭共振掃描",
 ) -> str:
     """將掃描結果格式化為 Telegram HTML 訊息。"""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -217,7 +297,7 @@ def format_resonance_telegram_message(
 
     if not hits:
         return (
-            f"📊 <b>多頭共振掃描</b>（{now}）\n"
+            f"📊 <b>{_escape_html(title)}</b>（{now}）\n"
             f"股票池：{_escape_html(universe_label)}{scan_note}{main_force_note}\n"
             f"門檻：≥ {min_passed}/{RESONANCE_ITEM_COUNT}\n"
             f"\n今日無符合條件的標的。"
@@ -227,7 +307,7 @@ def format_resonance_telegram_message(
     truncated = len(hits) > len(display_hits)
 
     lines = [
-        f"📊 <b>多頭共振掃描</b>（{now}）",
+        f"📊 <b>{_escape_html(title)}</b>（{now}）",
         f"股票池：{_escape_html(universe_label)}{scan_note}{main_force_note}",
         f"門檻：≥ {min_passed}/{RESONANCE_ITEM_COUNT}",
         f"符合 <b>{len(hits)}</b> 檔"

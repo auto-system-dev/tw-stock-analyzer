@@ -15,6 +15,7 @@ from tw_stock_analyzer.data.broker_main_force import resolve_fetch_main_force
 from tw_stock_analyzer.notifications.resonance_alert import (
     format_resonance_telegram_message,
     scan_resonance_with_summary,
+    scan_top_resonance_with_summary,
 )
 from tw_stock_analyzer.notifications.telegram import TelegramConfigError, send_telegram_message
 from tw_stock_analyzer.screener.engine import ScreenerEngine
@@ -454,6 +455,165 @@ def notify_resonance_cmd(
         raise SystemExit(1) from e
 
     console.print(f"[green]已發送 Telegram（{len(hits)} 檔符合 ≥ {min_resonance}/7）。[/green]")
+
+
+@main.command("notify-top-resonance")
+@click.option(
+    "--universe",
+    "-u",
+    type=click.Choice(["watchlist", "all"], case_sensitive=False),
+    default="all",
+    show_default=True,
+    help="潛力股掃描股票池",
+)
+@click.option(
+    "--top",
+    default=60,
+    show_default=True,
+    type=click.IntRange(1, 200),
+    help="潛力股深度評分取前 N 檔，再做多頭共振",
+)
+@click.option(
+    "--min-resonance",
+    default=6,
+    show_default=True,
+    type=click.IntRange(1, 7),
+    help="至少符合幾項多頭共振（1～7）",
+)
+@click.option(
+    "--min-score",
+    default=0,
+    show_default=True,
+    type=int,
+    help="潛力股最低綜合分（篩選 Top N 前）",
+)
+@click.option(
+    "--bullish-only",
+    is_flag=True,
+    default=False,
+    help="潛力股僅保留綜合方向「看多」",
+)
+@click.option(
+    "--period",
+    "-p",
+    default="1y",
+    show_default=True,
+    help="掃描用的歷史資料期間",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="只掃描並印出訊息，不發送 Telegram",
+)
+@click.option(
+    "--notify-empty",
+    is_flag=True,
+    default=False,
+    help="無符合標的時也發送 Telegram（預設僅在有符合時發送）",
+)
+def notify_top_resonance_cmd(
+    universe: str,
+    top: int,
+    min_resonance: int,
+    min_score: int,
+    bullish_only: bool,
+    period: str,
+    dry_run: bool,
+    notify_empty: bool,
+) -> None:
+    """全市場潛力股 Top N → 多頭共振（含第 7 項）→ Telegram。
+
+    例如：tw-stock notify-top-resonance --top 60 --min-resonance 6
+    """
+    from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
+
+    u = universe.lower()
+    console.print(
+        f"[cyan]階段 1：{u} 全市場快速掃描 → 潛力股深度 Top {top}[/cyan]"
+    )
+    console.print(
+        f"[cyan]階段 2：Top {top} 多頭共振（含第 7 項主力淨張）"
+        f" · 門檻 ≥ {min_resonance}/7[/cyan]"
+    )
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("{task.completed}/{task.total}"),
+            console=console,
+        ) as progress:
+            fast_task = progress.add_task("潛力股快速掃描…", total=1)
+            deep_task = progress.add_task("潛力股深度評分…", total=1)
+            resonance_task = progress.add_task("多頭共振檢查…", total=1)
+
+            def screener_progress(phase: str, current: int, total: int) -> None:
+                if phase == "fast":
+                    progress.update(fast_task, total=max(total, 1), completed=current)
+                else:
+                    progress.update(deep_task, total=max(total, 1), completed=current)
+
+            def resonance_progress(current: int, total: int) -> None:
+                progress.update(
+                    resonance_task,
+                    total=max(total, 1),
+                    completed=current,
+                )
+
+            summary, pool_label = scan_top_resonance_with_summary(
+                universe=u,
+                top_n=top,
+                min_passed=min_resonance,
+                period=period,
+                min_score=min_score,
+                bullish_only=bullish_only,
+                on_screener_progress=screener_progress,
+                on_resonance_progress=resonance_progress,
+            )
+        hits = list(summary.hits)
+    except Exception as e:
+        console.print(f"[red]錯誤：{e}[/red]")
+        raise SystemExit(1) from e
+
+    console.print(
+        f"[green]掃描完成：全市場 {summary.total_count} 檔"
+        f" → 潛力股 Top {summary.scanned_count} 檔共振"
+        f" · 符合 {len(hits)} 檔[/green]"
+    )
+
+    message = format_resonance_telegram_message(
+        hits,
+        min_passed=min_resonance,
+        universe_label=pool_label,
+        scanned_count=summary.scanned_count,
+        total_count=summary.total_count,
+        fetch_main_force=True,
+        title="多頭共振掃描（潛力股 Top）",
+    )
+    console.print(message)
+
+    if dry_run:
+        console.print("[yellow]dry-run 模式，未發送 Telegram。[/yellow]")
+        return
+
+    if not hits and not notify_empty:
+        console.print("[dim]無符合標的，略過 Telegram 通知。[/dim]")
+        return
+
+    try:
+        send_telegram_message(message)
+    except TelegramConfigError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from e
+    except Exception as e:
+        console.print(f"[red]Telegram 發送失敗：{e}[/red]")
+        raise SystemExit(1) from e
+
+    console.print(
+        f"[green]已發送 Telegram（{len(hits)} 檔符合 ≥ {min_resonance}/7）。[/green]"
+    )
 
 
 @main.command("backtest")
