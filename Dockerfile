@@ -5,14 +5,17 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=10
 
 COPY requirements.txt pyproject.toml README.md ./
-RUN pip install --upgrade pip && pip install -r requirements.txt
+RUN pip install --upgrade pip \
+    && pip install --retries 10 --timeout 120 -r requirements.txt
 
 COPY tw_stock_analyzer ./tw_stock_analyzer
 COPY .streamlit ./.streamlit
-RUN pip install -e .
+RUN pip install --retries 10 --timeout 120 -e .
 
 EXPOSE 8501
 
