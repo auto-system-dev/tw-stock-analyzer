@@ -104,16 +104,10 @@ class FinMindApiClient:
             return None
 
     def fetch_stock_list(self) -> list[str]:
-        """取得台股 4 位數代號清單（FinMind TaiwanStockInfo：上市/上櫃/興櫃）。"""
-        df = self.fetch_dataset("TaiwanStockInfo")
-        if df is None or df.empty:
-            return []
-        id_col = "stock_id" if "stock_id" in df.columns else "data_id"
-        if id_col not in df.columns:
-            return []
-        codes = df[id_col].astype(str).str.strip()
-        codes = codes[codes.str.match(r"^\d{4}$", na=False)]
-        return sorted(codes.unique().tolist())
+        """取得目前在市台股 4 位數代號（FinMind TaiwanStockInfo，排除逾 N 日未更新）。"""
+        from tw_stock_analyzer.data.stock_market_registry import fetch_active_stock_ids
+
+        return fetch_active_stock_ids()
 
 
 @lru_cache(maxsize=1)

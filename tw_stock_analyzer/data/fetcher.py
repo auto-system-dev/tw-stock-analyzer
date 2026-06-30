@@ -1,7 +1,8 @@
-"""擷取台股歷史資料：日線優先 TWSE，其餘備援 Yahoo Finance。"""
+"""擷取台股歷史資料：日線優先 TWSE / FinMind，Yahoo 為最後備援。"""
 
 from __future__ import annotations
 
+import logging
 import re
 
 import pandas as pd
@@ -41,9 +42,10 @@ class StockFetcher:
                 except Exception:
                     pass
             try:
-                return self._fetch_yfinance(symbol, period=period, interval=interval)
-            except Exception:
                 return FinMindDailyFetcher().fetch(symbol, period=period)
+            except Exception:
+                pass
+            return self._fetch_yfinance(symbol, period=period, interval=interval)
         return self._fetch_yfinance(symbol, period=period, interval=interval)
 
     @staticmethod
@@ -60,13 +62,19 @@ class StockFetcher:
         interval: str,
     ) -> pd.DataFrame:
         ticker = to_yahoo_symbol(symbol)
-        raw = yf.download(
-            ticker,
-            period=period,
-            interval=interval,
-            progress=False,
-            auto_adjust=True,
-        )
+        yf_log = logging.getLogger("yfinance")
+        prev_level = yf_log.level
+        yf_log.setLevel(logging.CRITICAL)
+        try:
+            raw = yf.download(
+                ticker,
+                period=period,
+                interval=interval,
+                progress=False,
+                auto_adjust=True,
+            )
+        finally:
+            yf_log.setLevel(prev_level)
         if raw.empty:
             raise ValueError(f"無法取得 {ticker} 的資料，請確認代號是否正確。")
 
