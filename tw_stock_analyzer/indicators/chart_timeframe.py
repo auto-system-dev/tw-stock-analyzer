@@ -5,9 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pandas as pd
-from ta.momentum import RSIIndicator
-from ta.trend import MACD, SMAIndicator
-from ta.volatility import BollingerBands
+from tw_stock_analyzer.indicators.ta_pure import (
+    BollingerBands,
+    MACD,
+    RSIIndicator,
+    SMAIndicator,
+)
 
 OHLCV_COLS = ("open", "high", "low", "close", "volume")
 TW_SHARES_PER_LOT = 1000

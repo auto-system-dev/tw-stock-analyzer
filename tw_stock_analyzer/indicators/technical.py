@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import pandas as pd
-from ta.momentum import RSIIndicator
-from ta.trend import MACD, SMAIndicator
-from ta.volatility import BollingerBands
+from tw_stock_analyzer.indicators.ta_pure import (
+    BollingerBands,
+    MACD,
+    RSIIndicator,
+    SMAIndicator,
+)
 
 
 class TechnicalIndicators:

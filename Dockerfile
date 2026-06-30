@@ -10,12 +10,22 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_RETRIES=10
 
 COPY requirements.txt pyproject.toml README.md ./
-RUN pip install --upgrade pip \
-    && pip install --retries 10 --timeout 120 -r requirements.txt
+RUN for i in 1 2 3; do \
+        pip install --upgrade pip \
+        && pip install --retries 10 --timeout 120 -r requirements.txt \
+        && break; \
+        echo "pip install attempt $i failed, retrying..."; \
+        sleep 15; \
+    done
 
 COPY tw_stock_analyzer ./tw_stock_analyzer
 COPY .streamlit ./.streamlit
-RUN pip install --retries 10 --timeout 120 -e .
+RUN for i in 1 2 3; do \
+        pip install --retries 10 --timeout 120 -e . \
+        && break; \
+        echo "pip install -e attempt $i failed, retrying..."; \
+        sleep 15; \
+    done
 
 EXPOSE 8501
 
