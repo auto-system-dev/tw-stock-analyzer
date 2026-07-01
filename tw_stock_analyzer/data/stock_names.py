@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from functools import lru_cache
-
-from tw_stock_analyzer.data.finmind_client import get_finmind_client
+from tw_stock_analyzer.data.stock_market_registry import fetch_stock_name_map
 from tw_stock_analyzer.data.symbol_utils import to_stock_id
 
 # 側欄常用標的與常見權值股；FinMind 不可用時的離線備援
@@ -26,34 +23,26 @@ COMMON_TW_STOCK_NAMES: dict[str, str] = {
 }
 
 
-@lru_cache(maxsize=1024)
-def _fetch_name_from_finmind(stock_id: str) -> str | None:
-    client = get_finmind_client()
-    end = datetime.now().date()
-    start = end - timedelta(days=60)
-    df = client.get_data(
-        "TaiwanStockInfo",
-        stock_id,
-        start.isoformat(),
-        end.isoformat(),
-    )
-    if df is None or df.empty or "stock_name" not in df.columns:
-        return None
-    name = str(df.iloc[-1]["stock_name"]).strip()
-    return name or None
+def _has_cjk(text: str) -> bool:
+    return any("\u4e00" <= ch <= "\u9fff" for ch in text)
 
 
 def resolve_tw_stock_name(symbol: str, fallback: str = "") -> str:
     """
     將代號解析為中文公司名。
 
-    優先順序：FinMind TaiwanStockInfo → 常用對照表 → fallback（如 Yahoo 英文名）→ 代號。
+    優先順序：常用對照表 → FinMind TaiwanStockInfo 快取 → 含中文的 fallback → 代號。
+    不使用 Yahoo 等來源的純英文名稱，避免儀表板 / Telegram 顯示英文公司全名。
     """
     stock_id = to_stock_id(symbol)
-    finmind_name = _fetch_name_from_finmind(stock_id)
-    if finmind_name:
-        return finmind_name
     if stock_id in COMMON_TW_STOCK_NAMES:
         return COMMON_TW_STOCK_NAMES[stock_id]
+
+    finmind_name = fetch_stock_name_map().get(stock_id, "").strip()
+    if finmind_name:
+        return finmind_name
+
     fb = (fallback or "").strip()
-    return fb if fb and fb != "—" else stock_id
+    if fb and fb != "—" and _has_cjk(fb):
+        return fb
+    return stock_id

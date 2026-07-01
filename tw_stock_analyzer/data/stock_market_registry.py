@@ -42,7 +42,7 @@ def _latest_stock_info_rows() -> pd.DataFrame:
         subset = subset.sort_values("date").groupby("stock_id", as_index=False).tail(1)
 
     cols = ["stock_id"]
-    for col in ("type", "industry_category", "date"):
+    for col in ("type", "industry_category", "stock_name", "date"):
         if col in subset.columns:
             cols.append(col)
     return subset[cols].reset_index(drop=True)
@@ -71,6 +71,20 @@ def fetch_stock_market_map() -> dict[str, str]:
         return {}
     types = df["type"].astype(str).str.strip().str.lower()
     return dict(zip(df["stock_id"], types, strict=False))
+
+
+@lru_cache(maxsize=1)
+def fetch_stock_name_map() -> dict[str, str]:
+    """stock_id -> 中文公司名（FinMind TaiwanStockInfo）。"""
+    df = _latest_stock_info_rows()
+    if df.empty or "stock_name" not in df.columns:
+        return {}
+    names = df["stock_name"].astype(str).str.strip()
+    return {
+        sid: name
+        for sid, name in zip(df["stock_id"], names, strict=False)
+        if name and name.lower() != "nan"
+    }
 
 
 @lru_cache(maxsize=1)
